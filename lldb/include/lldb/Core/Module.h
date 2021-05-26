@@ -32,10 +32,10 @@
 #include "llvm/Support/Chrono.h"
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
-#include <stddef.h>
-#include <stdint.h>
 #include <string>
 #include <vector>
 
@@ -504,10 +504,6 @@ public:
 
   const llvm::sys::TimePoint<> &GetObjectModificationTime() const {
     return m_object_mod_time;
-  }
-
-  void SetObjectModificationTime(const llvm::sys::TimePoint<> &mod_time) {
-    m_mod_time = mod_time;
   }
 
   /// This callback will be called by SymbolFile implementations when

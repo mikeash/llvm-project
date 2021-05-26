@@ -26,8 +26,8 @@
 #include <string>
 #include <vector>
 
-#include <stdint.h>
-#include <stdio.h>
+#include <cstdint>
+#include <cstdio>
 
 namespace lldb_private {
 class Debugger;
@@ -128,11 +128,11 @@ public:
 
   FILE *GetErrorFILE();
 
-  lldb::FileSP &GetInputFileSP();
+  lldb::FileSP GetInputFileSP();
 
-  lldb::StreamFileSP &GetOutputStreamFileSP();
+  lldb::StreamFileSP GetOutputStreamFileSP();
 
-  lldb::StreamFileSP &GetErrorStreamFileSP();
+  lldb::StreamFileSP GetErrorStreamFileSP();
 
   Debugger &GetDebugger() { return m_debugger; }
 
@@ -419,16 +419,14 @@ public:
 
 private:
 #if LLDB_ENABLE_LIBEDIT
-  static bool IsInputCompleteCallback(Editline *editline, StringList &lines,
-                                      void *baton);
+  bool IsInputCompleteCallback(Editline *editline, StringList &lines);
 
-  static int FixIndentationCallback(Editline *editline, const StringList &lines,
-                                    int cursor_position, void *baton);
+  int FixIndentationCallback(Editline *editline, const StringList &lines,
+                             int cursor_position);
 
-  static llvm::Optional<std::string> SuggestionCallback(llvm::StringRef line,
-                                                        void *baton);
+  llvm::Optional<std::string> SuggestionCallback(llvm::StringRef line);
 
-  static void AutoCompleteCallback(CompletionRequest &request, void *baton);
+  void AutoCompleteCallback(CompletionRequest &request);
 #endif
 
 protected:

@@ -101,10 +101,10 @@ namespace {
 
     // These functions are temporary abstractions around LiveVariables and
     // LiveIntervals, so they can go away when LiveVariables does.
-    bool isLiveIn(unsigned Reg, const MachineBasicBlock *MBB);
-    bool isLiveOutPastPHIs(unsigned Reg, const MachineBasicBlock *MBB);
+    bool isLiveIn(Register Reg, const MachineBasicBlock *MBB);
+    bool isLiveOutPastPHIs(Register Reg, const MachineBasicBlock *MBB);
 
-    using BBVRegPair = std::pair<unsigned, unsigned>;
+    using BBVRegPair = std::pair<unsigned, Register>;
     using VRegPHIUse = DenseMap<BBVRegPair, unsigned>;
 
     VRegPHIUse VRegPHIUseCount;
@@ -316,6 +316,16 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
                                   IncomingReg, DestReg);
   }
 
+  if (MPhi->peekDebugInstrNum()) {
+    // If referred to by debug-info, store where this PHI was.
+    MachineFunction *MF = MBB.getParent();
+    unsigned ID = MPhi->peekDebugInstrNum();
+    auto P = MachineFunction::DebugPHIRegallocPos(&MBB, IncomingReg, 0);
+    auto Res = MF->DebugPHIPositions.insert({ID, P});
+    assert(Res.second);
+    (void)Res;
+  }
+
   // Update live variable information if there is any.
   if (LV) {
     if (IncomingReg) {
@@ -394,8 +404,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
     }
 
     LiveInterval &DestLI = LIS->getInterval(DestReg);
-    assert(DestLI.begin() != DestLI.end() &&
-           "PHIs should have nonempty LiveIntervals.");
+    assert(!DestLI.empty() && "PHIs should have nonempty LiveIntervals.");
     if (DestLI.endIndex().isDead()) {
       // A dead PHI's live range begins and ends at the start of the MBB, but
       // the lowered copy, which will still be dead, needs to begin and end at
@@ -442,6 +451,19 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
     if (!MBBsInsertedInto.insert(&opBlock).second)
       continue;  // If the copy has already been emitted, we're done.
 
+    MachineInstr *SrcRegDef = MRI->getVRegDef(SrcReg);
+    if (SrcRegDef && TII->isUnspillableTerminator(SrcRegDef)) {
+      assert(SrcRegDef->getOperand(0).isReg() &&
+             SrcRegDef->getOperand(0).isDef() &&
+             "Expected operand 0 to be a reg def!");
+      // Now that the PHI's use has been removed (as the instruction was
+      // removed) there should be no other uses of the SrcReg.
+      assert(MRI->use_empty(SrcReg) &&
+             "Expected a single use from UnspillableTerminator");
+      SrcRegDef->getOperand(0).setReg(IncomingReg);
+      continue;
+    }
+
     // Find a safe location to insert the copy, this may be the first terminator
     // in the block (or end()).
     MachineBasicBlock::iterator InsertPos =
@@ -463,9 +485,10 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
           if (DefMI->isImplicitDef())
             ImpDefs.insert(DefMI);
       } else {
-        NewSrcInstr =
-            TII->createPHISourceCopy(opBlock, InsertPos, MPhi->getDebugLoc(),
-                                     SrcReg, SrcSubReg, IncomingReg);
+        // Delete the debug location, since the copy is inserted into a
+        // different basic block.
+        NewSrcInstr = TII->createPHISourceCopy(opBlock, InsertPos, nullptr,
+                                               SrcReg, SrcSubReg, IncomingReg);
       }
     }
 
@@ -538,9 +561,8 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
         LiveInterval &SrcLI = LIS->getInterval(SrcReg);
 
         bool isLiveOut = false;
-        for (MachineBasicBlock::succ_iterator SI = opBlock.succ_begin(),
-             SE = opBlock.succ_end(); SI != SE; ++SI) {
-          SlotIndex startIdx = LIS->getMBBStartIdx(*SI);
+        for (MachineBasicBlock *Succ : opBlock.successors()) {
+          SlotIndex startIdx = LIS->getMBBStartIdx(Succ);
           VNInfo *VNI = SrcLI.getVNInfoAt(startIdx);
 
           // Definitions by other PHIs are not truly live-in for our purposes.
@@ -692,7 +714,7 @@ bool PHIElimination::SplitPHIEdges(MachineFunction &MF,
   return Changed;
 }
 
-bool PHIElimination::isLiveIn(unsigned Reg, const MachineBasicBlock *MBB) {
+bool PHIElimination::isLiveIn(Register Reg, const MachineBasicBlock *MBB) {
   assert((LV || LIS) &&
          "isLiveIn() requires either LiveVariables or LiveIntervals");
   if (LIS)
@@ -701,7 +723,7 @@ bool PHIElimination::isLiveIn(unsigned Reg, const MachineBasicBlock *MBB) {
     return LV->isLiveIn(Reg, *MBB);
 }
 
-bool PHIElimination::isLiveOutPastPHIs(unsigned Reg,
+bool PHIElimination::isLiveOutPastPHIs(Register Reg,
                                        const MachineBasicBlock *MBB) {
   assert((LV || LIS) &&
          "isLiveOutPastPHIs() requires either LiveVariables or LiveIntervals");

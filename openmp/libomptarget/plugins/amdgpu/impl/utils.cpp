@@ -19,14 +19,12 @@
 /*
  * Helper functions
  */
-const char *get_atmi_error_string(atmi_status_t err) {
+const char *get_atmi_error_string(hsa_status_t err) {
   switch (err) {
-  case ATMI_STATUS_SUCCESS:
-    return "ATMI_STATUS_SUCCESS";
-  case ATMI_STATUS_UNKNOWN:
-    return "ATMI_STATUS_UNKNOWN";
-  case ATMI_STATUS_ERROR:
-    return "ATMI_STATUS_ERROR";
+  case HSA_STATUS_SUCCESS:
+    return "HSA_STATUS_SUCCESS";
+  case HSA_STATUS_ERROR:
+    return "HSA_STATUS_ERROR";
   default:
     return "";
   }
@@ -97,37 +95,13 @@ void Environment::GetEnvAll() {
   std::string var = GetEnv("ATMI_HELP");
   if (!var.empty()) {
     std::cout << "ATMI_MAX_HSA_QUEUE_SIZE : positive integer" << std::endl
-              << "ATMI_MAX_KERNEL_TYPES : positive integer" << std::endl
-              << "ATMI_DEVICE_GPU_WORKERS : positive integer" << std::endl
-              << "ATMI_DEVICE_CPU_WORKERS : positive integer" << std::endl
               << "ATMI_DEBUG : 1 for printing out trace/debug info"
               << std::endl;
-    exit(0);
   }
 
   var = GetEnv("ATMI_MAX_HSA_QUEUE_SIZE");
   if (!var.empty())
     max_queue_size_ = std::stoi(var);
-
-  var = GetEnv("ATMI_MAX_KERNEL_TYPES");
-  if (!var.empty())
-    max_kernel_types_ = std::stoi(var);
-
-  /* TODO: If we get a good use case for device-specific worker count, we
-   * should explore it, but let us keep the worker count uniform for all
-   * devices of a type until that time
-   */
-  var = GetEnv("ATMI_DEVICE_GPU_WORKERS");
-  if (!var.empty())
-    num_gpu_queues_ = std::stoi(var);
-
-  /* TODO: If we get a good use case for device-specific worker count, we
-   * should explore it, but let us keep the worker count uniform for all
-   * devices of a type until that time
-   */
-  var = GetEnv("ATMI_DEVICE_CPU_WORKERS");
-  if (!var.empty())
-    num_cpu_queues_ = std::stoi(var);
 
   var = GetEnv("ATMI_DEBUG");
   if (!var.empty())

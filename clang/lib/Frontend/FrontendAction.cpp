@@ -233,13 +233,12 @@ static SourceLocation ReadOriginalFileName(CompilerInstance &CI,
   auto &SourceMgr = CI.getSourceManager();
   auto MainFileID = SourceMgr.getMainFileID();
 
-  bool Invalid = false;
-  const auto *MainFileBuf = SourceMgr.getBuffer(MainFileID, &Invalid);
-  if (Invalid)
+  auto MainFileBuf = SourceMgr.getBufferOrNone(MainFileID);
+  if (!MainFileBuf)
     return SourceLocation();
 
   std::unique_ptr<Lexer> RawLexer(
-      new Lexer(MainFileID, MainFileBuf, SourceMgr, CI.getLangOpts()));
+      new Lexer(MainFileID, *MainFileBuf, SourceMgr, CI.getLangOpts()));
 
   // If the first line has the syntax of
   //
@@ -389,7 +388,7 @@ static std::error_code collectModuleHeaderIncludes(
       for (int I = 0; I != Dir.level() + 1; ++I, ++PathIt)
         Components.push_back(*PathIt);
       SmallString<128> RelativeHeader(
-                                UmbrellaDir.PathRelativeToRootModuleDirectory);
+          UmbrellaDir.PathRelativeToRootModuleDirectory);
       for (auto It = Components.rbegin(), End = Components.rend(); It != End;
            ++It)
         llvm::sys::path::append(RelativeHeader, *It);
@@ -452,7 +451,7 @@ static bool loadModuleMapForModuleBuild(CompilerInstance &CI, bool IsSystem,
                            PresumedModuleMapFile))
     return true;
 
-  if (SrcMgr.getBuffer(ModuleMapID)->getBufferSize() == Offset)
+  if (SrcMgr.getBufferOrFake(ModuleMapID).getBufferSize() == Offset)
     Offset = 0;
 
   return false;
@@ -627,7 +626,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
       if (auto *File = OldSM.getFileEntryForID(ID))
         Input = FrontendInputFile(File->getName(), Kind);
       else
-        Input = FrontendInputFile(OldSM.getBuffer(ID), Kind);
+        Input = FrontendInputFile(OldSM.getBufferOrFake(ID), Kind);
     }
     setCurrentInput(Input, std::move(AST));
   }
@@ -880,9 +879,9 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
       if (!CI.getPreprocessorOpts().ImplicitPCHInclude.empty()) {
         CI.createPCHExternalASTSource(
             CI.getPreprocessorOpts().ImplicitPCHInclude,
-            CI.getPreprocessorOpts().DisablePCHValidation,
-          CI.getPreprocessorOpts().AllowPCHWithCompilerErrors, DeserialListener,
-            DeleteDeserialListener);
+            CI.getPreprocessorOpts().DisablePCHOrModuleValidation,
+            CI.getPreprocessorOpts().AllowPCHWithCompilerErrors,
+            DeserialListener, DeleteDeserialListener);
         if (!CI.getASTContext().getExternalSource())
           goto failure;
       }
@@ -1094,6 +1093,7 @@ bool WrapperFrontendAction::BeginSourceFileAction(CompilerInstance &CI) {
 void WrapperFrontendAction::ExecuteAction() {
   WrappedAction->ExecuteAction();
 }
+void WrapperFrontendAction::EndSourceFile() { WrappedAction->EndSourceFile(); }
 void WrapperFrontendAction::EndSourceFileAction() {
   WrappedAction->EndSourceFileAction();
 }

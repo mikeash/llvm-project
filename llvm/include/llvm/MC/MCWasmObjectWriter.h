@@ -33,8 +33,8 @@ public:
     return W->getFormat() == Triple::Wasm;
   }
 
-  virtual unsigned getRelocType(const MCValue &Target,
-                                const MCFixup &Fixup) const = 0;
+  virtual unsigned getRelocType(const MCValue &Target, const MCFixup &Fixup,
+                                bool IsLocRel) const = 0;
 
   /// \name Accessors
   /// @{
@@ -51,6 +51,10 @@ public:
 std::unique_ptr<MCObjectWriter>
 createWasmObjectWriter(std::unique_ptr<MCWasmObjectTargetWriter> MOTW,
                        raw_pwrite_stream &OS);
+
+std::unique_ptr<MCObjectWriter>
+createWasmDwoObjectWriter(std::unique_ptr<MCWasmObjectTargetWriter> MOTW,
+                          raw_pwrite_stream &OS, raw_pwrite_stream &DwoOS);
 
 } // namespace llvm
 

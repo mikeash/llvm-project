@@ -11,14 +11,6 @@
 #
 # Project-wide settings
 
-# Where gtest's .h files can be found.
-include_directories(
-  googletest/include
-  googletest
-  googlemock/include
-  googlemock
-  )
-
 if(WIN32)
   add_definitions(-DGTEST_OS_WINDOWS=1)
 endif()
@@ -69,12 +61,14 @@ if(CXX_SUPPORTS_SUGGEST_OVERRIDE_FLAG)
   set_target_properties(gtest PROPERTIES INTERFACE_COMPILE_OPTIONS "-Wno-suggest-override")
 endif()
 
-# Gtest 1.8.0 uses tr1/tuple which is deprecated on MSVC, so we force it off.
-target_compile_definitions(gtest PUBLIC GTEST_HAS_TR1_TUPLE=0)
-
 if (NOT LLVM_ENABLE_THREADS)
   target_compile_definitions(gtest PUBLIC GTEST_HAS_PTHREAD=0)
 endif ()
+
+target_include_directories(gtest
+  PUBLIC googletest/include googlemock/include
+  PRIVATE googletest googlemock
+  )
 
 add_subdirectory(UnitTestMain)
 

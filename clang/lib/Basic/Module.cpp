@@ -37,7 +37,7 @@ using namespace clang;
 Module::Module(StringRef Name, SourceLocation DefinitionLoc, Module *Parent,
                bool IsFramework, bool IsExplicit, unsigned VisibilityID)
     : Name(Name), DefinitionLoc(DefinitionLoc), Parent(Parent),
-      Directory(), Umbrella(), ASTFile(nullptr),
+      Directory(), Umbrella(), ASTFile(None),
       VisibilityID(VisibilityID), IsUnimportable(false),
       HasIncompatibleModuleFile(false), IsAvailable(true),
       IsFromModuleFile(false), IsFramework(IsFramework), IsExplicit(IsExplicit),
@@ -50,7 +50,7 @@ Module::Module(StringRef Name, SourceLocation DefinitionLoc, Module *Parent,
       // conflicts.
       IsSwiftInferImportAsMember(false),
 
-      HasUmbrellaDir(false), NameVisibility(Hidden) {
+      NameVisibility(Hidden) {
   if (Parent) {
     IsAvailable = Parent->isAvailable();
     IsUnimportable = Parent->isUnimportable();
@@ -81,7 +81,7 @@ static bool isPlatformEnvironment(const TargetInfo &Target, StringRef Feature) {
     return true;
 
   auto CmpPlatformEnv = [](StringRef LHS, StringRef RHS) {
-    auto Pos = LHS.find("-");
+    auto Pos = LHS.find('-');
     if (Pos == StringRef::npos)
       return false;
     SmallString<128> NewLHS = LHS.slice(0, Pos);
@@ -254,7 +254,7 @@ Module::DirectoryName Module::getUmbrellaDir() const {
     return {"", "", U.Entry->getDir()};
 
   return {UmbrellaAsWritten, UmbrellaRelativeToRootModuleDirectory,
-          static_cast<const DirectoryEntry *>(Umbrella)};
+          Umbrella.dyn_cast<const DirectoryEntry *>()};
 }
 
 void Module::addTopHeader(const FileEntry *File) {
@@ -436,7 +436,7 @@ void Module::buildVisibleModulesCache() const {
   }
 }
 
-void Module::print(raw_ostream &OS, unsigned Indent) const {
+void Module::print(raw_ostream &OS, unsigned Indent, bool Dump) const {
   OS.indent(Indent);
   if (IsFramework)
     OS << "framework ";
@@ -544,7 +544,7 @@ void Module::print(raw_ostream &OS, unsigned Indent) const {
     // the module. Regular inferred submodules are OK, as we need to look at all
     // those header files anyway.
     if (!(*MI)->IsInferred || (*MI)->IsFramework)
-      (*MI)->print(OS, Indent + 2);
+      (*MI)->print(OS, Indent + 2, Dump);
 
   for (unsigned I = 0, N = Exports.size(); I != N; ++I) {
     OS.indent(Indent + 2);
@@ -566,6 +566,13 @@ void Module::print(raw_ostream &OS, unsigned Indent) const {
     if (UnresolvedExports[I].Wildcard)
       OS << (UnresolvedExports[I].Id.empty() ? "*" : ".*");
     OS << "\n";
+  }
+
+  if (Dump) {
+    for (Module *M : Imports) {
+      OS.indent(Indent + 2);
+      llvm::errs() << "import " << M->getFullModuleName() << "\n";
+    }
   }
 
   for (unsigned I = 0, N = DirectUses.size(); I != N; ++I) {
@@ -628,7 +635,7 @@ void Module::print(raw_ostream &OS, unsigned Indent) const {
 }
 
 LLVM_DUMP_METHOD void Module::dump() const {
-  print(llvm::errs());
+  print(llvm::errs(), 0, true);
 }
 
 void VisibleModuleSet::setVisible(Module *M, SourceLocation Loc,
@@ -680,7 +687,7 @@ ASTSourceDescriptor::ASTSourceDescriptor(Module &M)
     : Signature(M.Signature), ClangModule(&M) {
   if (M.Directory)
     Path = M.Directory->getName();
-  if (auto *File = M.getASTFile())
+  if (auto File = M.getASTFile())
     ASTFile = File->getName();
 }
 

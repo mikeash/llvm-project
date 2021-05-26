@@ -616,6 +616,12 @@ void JSONNodeDumper::VisitVectorType(const VectorType *VT) {
   case VectorType::NeonPolyVector:
     JOS.attribute("vectorKind", "neon poly");
     break;
+  case VectorType::SveFixedLengthDataVector:
+    JOS.attribute("vectorKind", "fixed-length sve data vector");
+    break;
+  case VectorType::SveFixedLengthPredicateVector:
+    JOS.attribute("vectorKind", "fixed-length sve predicate vector");
+    break;
   }
 }
 
@@ -881,9 +887,10 @@ void JSONNodeDumper::VisitTemplateTemplateParmDecl(
 
   if (D->hasDefaultArgument())
     JOS.attributeObject("defaultArg", [=] {
+      const auto *InheritedFrom = D->getDefaultArgStorage().getInheritedFrom();
       Visit(D->getDefaultArgument().getArgument(),
-            D->getDefaultArgStorage().getInheritedFrom()->getSourceRange(),
-            D->getDefaultArgStorage().getInheritedFrom(),
+            InheritedFrom ? InheritedFrom->getSourceRange() : SourceLocation{},
+            InheritedFrom,
             D->defaultArgumentWasInherited() ? "inherited from" : "previous");
     });
 }
@@ -1412,7 +1419,7 @@ void JSONNodeDumper::VisitFixedPointLiteral(const FixedPointLiteral *FPL) {
   JOS.attribute("value", FPL->getValueAsString(/*Radix=*/10));
 }
 void JSONNodeDumper::VisitFloatingLiteral(const FloatingLiteral *FL) {
-  llvm::SmallVector<char, 16> Buffer;
+  llvm::SmallString<16> Buffer;
   FL->getValue().toString(Buffer);
   JOS.attribute("value", Buffer);
 }
@@ -1444,6 +1451,7 @@ void JSONNodeDumper::VisitCaseStmt(const CaseStmt *CS) {
 void JSONNodeDumper::VisitLabelStmt(const LabelStmt *LS) {
   JOS.attribute("name", LS->getName());
   JOS.attribute("declId", createPointerRepresentation(LS->getDecl()));
+  attributeOnlyIfTrue("sideEntry", LS->isSideEntry());
 }
 void JSONNodeDumper::VisitGotoStmt(const GotoStmt *GS) {
   JOS.attribute("targetLabelDeclId",

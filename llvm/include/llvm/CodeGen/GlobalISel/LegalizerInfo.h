@@ -5,10 +5,10 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-//
+/// \file
 /// Interface for Targets to specify which operations they can successfully
 /// select and how the others should be expanded most efficiently.
-//
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CODEGEN_GLOBALISEL_LEGALIZERINFO_H
@@ -37,7 +37,6 @@ extern cl::opt<bool> DisableGISelLegalityCheck;
 
 class LegalizerHelper;
 class MachineInstr;
-class MachineIRBuilder;
 class MachineRegisterInfo;
 class MCInstrInfo;
 class GISelChangeObserver;
@@ -827,6 +826,13 @@ public:
                     LegalizeMutations::scalarize(TypeIdx));
   }
 
+  LegalizeRuleSet &scalarizeIf(LegalityPredicate Predicate, unsigned TypeIdx) {
+    using namespace LegalityPredicates;
+    return actionIf(LegalizeAction::FewerElements,
+                    all(Predicate, isVector(typeIdx(TypeIdx))),
+                    LegalizeMutations::scalarize(TypeIdx));
+  }
+
   /// Ensure the scalar or element is at least as wide as Ty.
   LegalizeRuleSet &minScalarOrElt(unsigned TypeIdx, const LLT Ty) {
     using namespace LegalityPredicates;
@@ -946,6 +952,23 @@ public:
         },
         [=](const LegalityQuery &Query) {
           LLT T = Query.Types[LargeTypeIdx];
+          return std::make_pair(TypeIdx, T);
+        });
+  }
+
+  /// Conditionally narrow the scalar or elt to match the size of another.
+  LegalizeRuleSet &maxScalarEltSameAsIf(LegalityPredicate Predicate,
+                                        unsigned TypeIdx,
+                                        unsigned SmallTypeIdx) {
+    typeIdx(TypeIdx);
+    return narrowScalarIf(
+        [=](const LegalityQuery &Query) {
+          return Query.Types[SmallTypeIdx].getScalarSizeInBits() <
+                     Query.Types[TypeIdx].getScalarSizeInBits() &&
+                 Predicate(Query);
+        },
+        [=](const LegalityQuery &Query) {
+          LLT T = Query.Types[SmallTypeIdx];
           return std::make_pair(TypeIdx, T);
         });
   }

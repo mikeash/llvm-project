@@ -1,19 +1,23 @@
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -tail-predication=enabled -loop-vectorize -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,PREFER-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=-mve \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,NO-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=false -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,NO-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve \
 ; RUN:   -tail-predication=disabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,NO-FOLDING
 
@@ -22,25 +26,29 @@
 ; these cases.
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve,-lob \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,NO-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve.fp \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,PREFER-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve.fp \
-; RUN:   -prefer-predicate-over-epilog=false \
+; RUN:   -prefer-predicate-over-epilogue=scalar-epilogue \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
 ; RUN:   FileCheck %s -check-prefixes=CHECK,NO-FOLDING
 
 ; RUN: opt -mtriple=thumbv8.1m.main-arm-eabihf -mattr=+mve.fp \
-; RUN:   -prefer-predicate-over-epilog=true \
+; RUN:   -prefer-predicate-over-epilogue=predicate-dont-vectorize \
 ; RUN:   -tail-predication=enabled -loop-vectorize \
+; RUN:   -enable-arm-maskedgatscat=false \
 ; RUN:   -enable-arm-maskedldst=true -S < %s | \
-; RUN:   FileCheck %s -check-prefixes=CHECK,FOLDING-OPT
+; RUN:   FileCheck %s -check-prefixes=CHECK
 
 define void @prefer_folding(i32* noalias nocapture %A, i32* noalias nocapture readonly %B, i32* noalias nocapture readonly %C) #0 {
 ; CHECK-LABEL:    prefer_folding(

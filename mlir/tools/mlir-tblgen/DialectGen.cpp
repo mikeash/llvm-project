@@ -10,12 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/TableGen/CodeGenHelpers.h"
 #include "mlir/TableGen/Format.h"
 #include "mlir/TableGen/GenInfo.h"
 #include "mlir/TableGen/Interfaces.h"
 #include "mlir/TableGen/OpClass.h"
-#include "mlir/TableGen/OpTrait.h"
 #include "mlir/TableGen/Operator.h"
+#include "mlir/TableGen/Trait.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -30,7 +31,7 @@ using namespace mlir;
 using namespace mlir::tblgen;
 
 static llvm::cl::OptionCategory dialectGenCat("Options for -gen-dialect-*");
-static llvm::cl::opt<std::string>
+llvm::cl::opt<std::string>
     selectedDialect("dialect", llvm::cl::desc("The dialect to gen for"),
                     llvm::cl::cat(dialectGenCat), llvm::cl::CommaSeparated);
 
@@ -74,7 +75,9 @@ class {0} : public ::mlir::Dialect {
   void initialize();
   friend class ::mlir::MLIRContext;
 public:
-  static ::llvm::StringRef getDialectNamespace() { return "{1}"; }
+  static constexpr ::llvm::StringLiteral getDialectNamespace() {
+    return ::llvm::StringLiteral("{1}");
+  }
 )";
 
 /// Registration for a single dependent dialect: to be inserted in the ctor
@@ -140,6 +143,13 @@ static const char *const regionResultAttrVerifierDecl = R"(
         ::mlir::NamedAttribute attribute) override;
 )";
 
+/// The code block for the op interface fallback hook.
+static const char *const operationInterfaceFallbackDecl = R"(
+    /// Provides a hook for op interface.
+    void *getRegisteredInterfaceForOp(mlir::TypeID interfaceID,
+                                      mlir::OperationName opName) override;
+)";
+
 /// Generate the declaration for the given dialect class.
 static void emitDialectDecl(Dialect &dialect,
                             iterator_range<DialectFilterIterator> dialectAttrs,
@@ -153,6 +163,10 @@ static void emitDialectDecl(Dialect &dialect,
       dialectsOs << llvm::formatv(dialectRegistrationTemplate,
                                   dependentDialect);
   }
+
+  // Emit all nested namespaces.
+  NamespaceEmitter nsEmitter(os, dialect);
+
   // Emit the start of the decl.
   std::string cppName = dialect.getCppClassName();
   os << llvm::formatv(dialectDeclBeginStr, cppName, dialect.getName(),
@@ -174,6 +188,8 @@ static void emitDialectDecl(Dialect &dialect,
     os << regionArgAttrVerifierDecl;
   if (dialect.hasRegionResultAttrVerify())
     os << regionResultAttrVerifierDecl;
+  if (dialect.hasOperationInterfaceFallback())
+    os << operationInterfaceFallbackDecl;
   if (llvm::Optional<StringRef> extraDecl = dialect.getExtraClassDeclaration())
     os << *extraDecl;
 

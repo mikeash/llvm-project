@@ -5,9 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-//
+/// \file
 /// Provides analysis for continuously CSEing during GISel passes.
-//
+///
 //===----------------------------------------------------------------------===//
 #ifndef LLVM_CODEGEN_GLOBALISEL_CSEINFO_H
 #define LLVM_CODEGEN_GLOBALISEL_CSEINFO_H
@@ -181,6 +181,8 @@ public:
   const GISelInstProfileBuilder &addNodeIDRegType(const RegisterBank *RB) const;
 
   const GISelInstProfileBuilder &addNodeIDRegNum(Register Reg) const;
+
+  const GISelInstProfileBuilder &addNodeIDReg(Register Reg) const;
 
   const GISelInstProfileBuilder &addNodeIDImmediate(int64_t Imm) const;
   const GISelInstProfileBuilder &

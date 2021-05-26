@@ -47,7 +47,7 @@ using namespace llvm;
 #define DEBUG_TYPE "arm-mve-gather-scatter-lowering"
 
 cl::opt<bool> EnableMaskedGatherScatters(
-    "enable-arm-maskedgatscat", cl::Hidden, cl::init(false),
+    "enable-arm-maskedgatscat", cl::Hidden, cl::init(true),
     cl::desc("Enable the generation of masked gathers and scatters"));
 
 namespace {
@@ -349,7 +349,8 @@ MVEGatherScatterLowering::getVarAndConst(Value *Inst, int TypeScale) {
 
 Value *MVEGatherScatterLowering::lowerGather(IntrinsicInst *I) {
   using namespace PatternMatch;
-  LLVM_DEBUG(dbgs() << "masked gathers: checking transform preconditions\n");
+  LLVM_DEBUG(dbgs() << "masked gathers: checking transform preconditions\n"
+                    << *I << "\n");
 
   // @llvm.masked.gather.*(Ptrs, alignment, Mask, Src0)
   // Attempt to turn the masked gather in I into a MVE intrinsic
@@ -390,7 +391,8 @@ Value *MVEGatherScatterLowering::lowerGather(IntrinsicInst *I) {
     // sext/zext as well as of the gather itself
     I->eraseFromParent();
 
-  LLVM_DEBUG(dbgs() << "masked gathers: successfully built masked gather\n");
+  LLVM_DEBUG(dbgs() << "masked gathers: successfully built masked gather\n"
+                    << *Load << "\n");
   return Load;
 }
 
@@ -510,7 +512,8 @@ Value *MVEGatherScatterLowering::tryCreateMaskedGatherOffset(
 
 Value *MVEGatherScatterLowering::lowerScatter(IntrinsicInst *I) {
   using namespace PatternMatch;
-  LLVM_DEBUG(dbgs() << "masked scatters: checking transform preconditions\n");
+  LLVM_DEBUG(dbgs() << "masked scatters: checking transform preconditions\n"
+                    << *I << "\n");
 
   // @llvm.masked.scatter.*(data, ptrs, alignment, mask)
   // Attempt to turn the masked scatter in I into a MVE intrinsic
@@ -537,7 +540,8 @@ Value *MVEGatherScatterLowering::lowerScatter(IntrinsicInst *I) {
   if (!Store)
     return nullptr;
 
-  LLVM_DEBUG(dbgs() << "masked scatters: successfully built masked scatter\n");
+  LLVM_DEBUG(dbgs() << "masked scatters: successfully built masked scatter\n"
+                    << *Store << "\n");
   I->eraseFromParent();
   return Store;
 }
@@ -609,9 +613,8 @@ Value *MVEGatherScatterLowering::tryCreateMaskedScatterOffset(
     }
   }
   if (InputTy->getPrimitiveSizeInBits() != 128) {
-    LLVM_DEBUG(
-        dbgs() << "masked scatters: cannot create scatters for non-standard"
-               << " input types. Expanding.\n");
+    LLVM_DEBUG(dbgs() << "masked scatters: cannot create scatters for "
+                         "non-standard input types. Expanding.\n");
     return nullptr;
   }
 
@@ -853,7 +856,6 @@ void MVEGatherScatterLowering::pushOutMul(PHINode *&Phi,
   Phi->addIncoming(NewIncrement, Phi->getIncomingBlock(LoopIncrement));
   Phi->removeIncomingValue((unsigned)0);
   Phi->removeIncomingValue((unsigned)0);
-  return;
 }
 
 // Check whether all usages of this instruction are as offsets of
@@ -883,7 +885,8 @@ static bool hasAllGatScatUsers(Instruction *I) {
 
 bool MVEGatherScatterLowering::optimiseOffsets(Value *Offsets, BasicBlock *BB,
                                                LoopInfo *LI) {
-  LLVM_DEBUG(dbgs() << "masked gathers/scatters: trying to optimize\n");
+  LLVM_DEBUG(dbgs() << "masked gathers/scatters: trying to optimize\n"
+                    << *Offsets << "\n");
   // Optimise the addresses of gathers/scatters by moving invariant
   // calculations out of the loop
   if (!isa<Instruction>(Offsets))
@@ -939,11 +942,10 @@ bool MVEGatherScatterLowering::optimiseOffsets(Value *Offsets, BasicBlock *BB,
     return false;
 
   // The phi must be an induction variable
-  Instruction *Op;
   int IncrementingBlock = -1;
 
   for (int i = 0; i < 2; i++)
-    if ((Op = dyn_cast<Instruction>(Phi->getIncomingValue(i))) != nullptr)
+    if (auto *Op = dyn_cast<Instruction>(Phi->getIncomingValue(i)))
       if (Op->getOpcode() == Instruction::Add &&
           (Op->getOperand(0) == Phi || Op->getOperand(1) == Phi))
         IncrementingBlock = i;
@@ -1062,6 +1064,7 @@ static Value *CheckAndCreateOffsetAdd(Value *X, Value *Y, Value *GEP,
     FixSummands(YElType, X);
     XElType = cast<FixedVectorType>(X->getType());
   }
+  assert(XElType && YElType && "Unknown vector types");
   // Check that the summands are of compatible types
   if (XElType != YElType) {
     LLVM_DEBUG(dbgs() << "masked gathers/scatters: incompatible gep offsets\n");

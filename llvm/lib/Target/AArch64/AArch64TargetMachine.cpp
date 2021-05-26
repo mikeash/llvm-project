@@ -161,6 +161,8 @@ static cl::opt<bool>
                         cl::desc("Enable the AAcrh64 branch target pass"),
                         cl::init(true));
 
+extern cl::opt<bool> EnableHomogeneousPrologEpilog;
+
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   // Register the target.
   RegisterTargetMachine<AArch64leTargetMachine> X(getTheAArch64leTarget());
@@ -182,8 +184,11 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   initializeAArch64ExpandPseudoPass(*PR);
   initializeAArch64LoadStoreOptPass(*PR);
   initializeAArch64SIMDInstrOptPass(*PR);
+  initializeAArch64O0PreLegalizerCombinerPass(*PR);
   initializeAArch64PreLegalizerCombinerPass(*PR);
   initializeAArch64PostLegalizerCombinerPass(*PR);
+  initializeAArch64PostLegalizerLoweringPass(*PR);
+  initializeAArch64PostSelectOptimizePass(*PR);
   initializeAArch64PromoteConstantPass(*PR);
   initializeAArch64RedundantCopyEliminationPass(*PR);
   initializeAArch64StorePairSuppressPass(*PR);
@@ -195,6 +200,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   initializeAArch64SLSHardeningPass(*PR);
   initializeAArch64StackTaggingPass(*PR);
   initializeAArch64StackTaggingPreRAPass(*PR);
+  initializeAArch64LowerHomogeneousPrologEpilogPass(*PR);
   initializeAArch64ExpandHardenedPseudosPass(*PR);
 }
 
@@ -214,8 +220,6 @@ static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
 static std::string computeDataLayout(const Triple &TT,
                                      const MCTargetOptions &Options,
                                      bool LittleEndian) {
-  if (Options.getABIName() == "ilp32")
-    return "e-m:e-p:32:32-i8:8-i16:16-i64:64-S128";
   if (TT.isOSBinFormatMachO()) {
     if (TT.getArch() == Triple::aarch64_32)
       return "e-m:o-p:32:32-i64:64-i128:128-n32:64-S128";
@@ -223,14 +227,15 @@ static std::string computeDataLayout(const Triple &TT,
   }
   if (TT.isOSBinFormatCOFF())
     return "e-m:w-p:64:64-i32:32-i64:64-i128:128-n32:64-S128";
-  if (LittleEndian)
-    return "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128";
-  return "E-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128";
+  std::string Endian = LittleEndian ? "e" : "E";
+  std::string Ptr32 = TT.getEnvironment() == Triple::GNUILP32 ? "-p:32:32" : "";
+  return Endian + "-m:e" + Ptr32 +
+         "-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128";
 }
 
 static StringRef computeDefaultCPU(const Triple &TT, StringRef CPU) {
-  if (CPU.empty() && TT.getArchName() == "arm64e")
-    return "vortex";
+  if (CPU.empty() && TT.isArm64e())
+    return "apple-a12";
   return CPU;
 }
 
@@ -318,6 +323,7 @@ AArch64TargetMachine::AArch64TargetMachine(const Target &T, const Triple &TT,
   if (getOptLevel() <= EnableGlobalISelAtO &&
       TT.getArch() != Triple::aarch64_32 &&
       TT.getArchName() != "arm64e" &&
+      TT.getEnvironment() != Triple::GNUILP32 &&
       !(getCodeModel() == CodeModel::Large && TT.isOSBinFormatMachO())) {
     setGlobalISel(true);
     setGlobalISelAbort(GlobalISelAbortMode::Disable);
@@ -340,12 +346,10 @@ AArch64TargetMachine::getSubtargetImpl(const Function &F) const {
   Attribute CPUAttr = F.getFnAttribute("target-cpu");
   Attribute FSAttr = F.getFnAttribute("target-features");
 
-  std::string CPU = !CPUAttr.hasAttribute(Attribute::None)
-                        ? CPUAttr.getValueAsString().str()
-                        : TargetCPU;
-  std::string FS = !FSAttr.hasAttribute(Attribute::None)
-                       ? FSAttr.getValueAsString().str()
-                       : TargetFS;
+  std::string CPU =
+      CPUAttr.isValid() ? CPUAttr.getValueAsString().str() : TargetCPU;
+  std::string FS =
+      FSAttr.isValid() ? FSAttr.getValueAsString().str() : TargetFS;
 
   auto &I = SubtargetMap[CPU + FS];
   if (!I) {
@@ -430,6 +434,7 @@ public:
   void addPostRegAlloc() override;
   void addPreSched2() override;
   void addPreEmitPass() override;
+  void addPreEmitPass2() override;
 
   std::unique_ptr<CSEConfigBase> getCSEConfig() const override;
 };
@@ -466,6 +471,7 @@ void AArch64PassConfig::addIRPasses() {
                                             .forwardSwitchCondToPhi(true)
                                             .convertSwitchToLookupTable(true)
                                             .needCanonicalLoops(false)
+                                            .hoistCommonInsts(true)
                                             .sinkCommonInsts(true)));
 
   // Run LoopDataPrefetch
@@ -554,13 +560,15 @@ bool AArch64PassConfig::addInstSelector() {
 }
 
 bool AArch64PassConfig::addIRTranslator() {
-  addPass(new IRTranslator());
+  addPass(new IRTranslator(getOptLevel()));
   return false;
 }
 
 void AArch64PassConfig::addPreLegalizeMachineIR() {
-  bool IsOptNone = getOptLevel() == CodeGenOpt::None;
-  addPass(createAArch64PreLegalizeCombiner(IsOptNone));
+  if (getOptLevel() == CodeGenOpt::None)
+    addPass(createAArch64O0PreLegalizerCombiner());
+  else
+    addPass(createAArch64PreLegalizerCombiner());
 }
 
 bool AArch64PassConfig::addLegalizeMachineIR() {
@@ -569,11 +577,10 @@ bool AArch64PassConfig::addLegalizeMachineIR() {
 }
 
 void AArch64PassConfig::addPreRegBankSelect() {
-  // For now we don't add this to the pipeline for -O0. We could do in future
-  // if we split the combines into separate O0/opt groupings.
   bool IsOptNone = getOptLevel() == CodeGenOpt::None;
   if (!IsOptNone)
-    addPass(createAArch64PostLegalizeCombiner(IsOptNone));
+    addPass(createAArch64PostLegalizerCombiner(IsOptNone));
+  addPass(createAArch64PostLegalizerLowering());
 }
 
 bool AArch64PassConfig::addRegBankSelect() {
@@ -586,7 +593,9 @@ void AArch64PassConfig::addPreGlobalInstructionSelect() {
 }
 
 bool AArch64PassConfig::addGlobalInstructionSelect() {
-  addPass(new InstructionSelect());
+  addPass(new InstructionSelect(getOptLevel()));
+  if (getOptLevel() != CodeGenOpt::None)
+    addPass(createAArch64PostSelectOptimize());
   return false;
 }
 
@@ -634,6 +643,9 @@ void AArch64PassConfig::addPostRegAlloc() {
 }
 
 void AArch64PassConfig::addPreSched2() {
+  // Lower homogeneous frame instructions
+  if (EnableHomogeneousPrologEpilog)
+    addPass(createAArch64LowerHomogeneousPrologEpilogPass());
   // Expand some pseudo instructions to allow proper scheduling.
   addPass(createAArch64ExpandPseudoPass());
   // Use load/store pair instructions when possible.
@@ -676,9 +688,12 @@ void AArch64PassConfig::addPreEmitPass() {
   if (BranchRelaxation)
     addPass(&BranchRelaxationPassID);
 
-  // Identify valid longjmp targets for Windows Control Flow Guard.
-  if (TM->getTargetTriple().isOSWindows())
+  if (TM->getTargetTriple().isOSWindows()) {
+    // Identify valid longjmp targets for Windows Control Flow Guard.
     addPass(createCFGuardLongjmpPass());
+    // Identify valid eh continuation targets for Windows EHCont Guard.
+    addPass(createEHContGuardCatchretPass());
+  }
 
   if (TM->getOptLevel() != CodeGenOpt::None && EnableCompressJumpTables)
     addPass(createAArch64CompressJumpTablesPass());
@@ -690,8 +705,11 @@ void AArch64PassConfig::addPreEmitPass() {
   if (TM->getOptLevel() != CodeGenOpt::None && EnableCollectLOH &&
       TM->getTargetTriple().isOSBinFormatMachO())
     addPass(createAArch64CollectLOHPass());
+}
 
-  // SVE bundles move prefixes with destructive operations.
+void AArch64PassConfig::addPreEmitPass2() {
+  // SVE bundles move prefixes with destructive operations. BLR_RVMARKER pseudo
+  // instructions are lowered to bundles as well.
   addPass(createUnpackMachineBundles(nullptr));
 }
 

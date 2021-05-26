@@ -41,18 +41,18 @@ std::string aarch64::getAArch64TargetCPU(const ArgList &Args,
   if (CPU == "native")
     return std::string(llvm::sys::getHostCPUName());
 
-  // arm64e requires v8.3a and only runs on vortex and later CPUs.
-  if (Triple.getArchName() == "arm64e") {
-    // Honor -mcpu as long it doesn't specify an older CPU than "vortex".
-    if (CPU.size() && (CPU != "cyclone"))
-      return CPU;
-
-    // Otherwise default to "vortex".
-    return "vortex";
-  }
-
   if (CPU.size())
     return CPU;
+
+  if (Triple.isTargetMachineMac() &&
+      Triple.getArch() == llvm::Triple::aarch64) {
+    // Apple Silicon macs default to M1 CPUs.
+    return "apple-m1";
+  }
+
+  // arm64e requires v8.3a and only runs on apple-a12 and later CPUs.
+  if (Triple.isArm64e())
+    return "apple-a12";
 
   // Make sure we pick the appropriate Apple CPU if -arch is used or when
   // targetting a Darwin OS.
@@ -79,9 +79,10 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
     else
       return false;
 
-    // +sve implies +f32mm if the base architecture is v8.6A
+    // +sve implies +f32mm if the base architecture is v8.6A or v8.7A
     // it isn't the case in general that sve implies both f64mm and f32mm
-    if ((ArchKind == llvm::AArch64::ArchKind::ARMV8_6A) && Feature == "sve")
+    if ((ArchKind == llvm::AArch64::ArchKind::ARMV8_6A ||
+         ArchKind == llvm::AArch64::ArchKind::ARMV8_7A) && Feature == "sve")
       Features.push_back("+f32mm");
   }
   return true;
@@ -105,7 +106,7 @@ static bool DecodeAArch64Mcpu(const Driver &D, StringRef Mcpu, StringRef &CPU,
     if (!llvm::AArch64::getArchFeatures(ArchKind, Features))
       return false;
 
-    unsigned Extension = llvm::AArch64::getDefaultExtensions(CPU, ArchKind);
+    uint64_t Extension = llvm::AArch64::getDefaultExtensions(CPU, ArchKind);
     if (!llvm::AArch64::getExtensionFeatures(Extension, Features))
       return false;
    }
@@ -163,7 +164,6 @@ getAArch64MicroArchFeaturesFromMtune(const Driver &D, StringRef Mtune,
 
   // 'cyclone' and later have zero-cycle register moves and zeroing.
   if (MtuneLowerCase == "cyclone" || MtuneLowerCase == "vortex" ||
-      MtuneLowerCase == "lightning" ||
       StringRef(MtuneLowerCase).startswith("apple")) {
     Features.push_back("+zcm");
     Features.push_back("+zcz");
@@ -238,11 +238,17 @@ void aarch64::getAArch64TargetFeatures(const Driver &D,
     StringRef Scope = A->getValue();
     bool EnableRetBr = false;
     bool EnableBlr = false;
-    if (Scope != "none" && Scope != "all") {
+    bool DisableComdat = false;
+    if (Scope != "none") {
       SmallVector<StringRef, 4> Opts;
       Scope.split(Opts, ",");
       for (auto Opt : Opts) {
         Opt = Opt.trim();
+        if (Opt == "all") {
+          EnableBlr = true;
+          EnableRetBr = true;
+          continue;
+        }
         if (Opt == "retbr") {
           EnableRetBr = true;
           continue;
@@ -251,19 +257,27 @@ void aarch64::getAArch64TargetFeatures(const Driver &D,
           EnableBlr = true;
           continue;
         }
+        if (Opt == "comdat") {
+          DisableComdat = false;
+          continue;
+        }
+        if (Opt == "nocomdat") {
+          DisableComdat = true;
+          continue;
+        }
         D.Diag(diag::err_invalid_sls_hardening)
             << Scope << A->getAsString(Args);
         break;
       }
-    } else if (Scope == "all") {
-      EnableRetBr = true;
-      EnableBlr = true;
     }
 
     if (EnableRetBr)
       Features.push_back("+harden-sls-retbr");
     if (EnableBlr)
       Features.push_back("+harden-sls-blr");
+    if (DisableComdat) {
+      Features.push_back("+harden-sls-nocomdat");
+    }
   }
 
   // En/disable crc
@@ -383,12 +397,6 @@ fp16_fml_fallthrough:
   auto V8_6Pos = llvm::find(Features, "+v8.6a");
   if (V8_6Pos != std::end(Features))
     V8_6Pos = Features.insert(std::next(V8_6Pos), {"+i8mm", "+bf16"});
-
-  bool HasSve = llvm::is_contained(Features, "+sve");
-  // -msve-vector-bits=<bits> flag is valid only if SVE is enabled.
-  if (Args.hasArg(options::OPT_msve_vector_bits_EQ))
-    if (!HasSve)
-      D.Diag(diag::err_drv_invalid_sve_vector_bits);
 
   if (Arg *A = Args.getLastArg(options::OPT_mno_unaligned_access,
                                options::OPT_munaligned_access)) {

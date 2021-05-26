@@ -15,6 +15,7 @@
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/StorageUniquerSupport.h"
+#include "llvm/ADT/Twine.h"
 
 namespace mlir {
 class Dialect;
@@ -36,6 +37,15 @@ public:
   /// types they contain.
   template <typename T> static AbstractType get(Dialect &dialect) {
     return AbstractType(dialect, T::getInterfaceMap(), T::getTypeID());
+  }
+
+  /// This method is used by Dialect objects to register types with
+  /// custom TypeIDs.
+  /// The use of this method is in general discouraged in favor of
+  /// 'get<CustomType>(dialect)';
+  static AbstractType get(Dialect &dialect, detail::InterfaceMap &&interfaceMap,
+                          TypeID typeID) {
+    return AbstractType(dialect, std::move(interfaceMap), typeID);
   }
 
   /// Return the dialect this type was registered to.
@@ -126,6 +136,13 @@ struct TypeUniquer {
   static typename std::enable_if_t<
       !std::is_same<typename T::ImplType, TypeStorage>::value, T>
   get(MLIRContext *ctx, Args &&...args) {
+#ifndef NDEBUG
+    if (!ctx->getTypeUniquer().isParametricStorageInitialized(T::getTypeID()))
+      llvm::report_fatal_error(llvm::Twine("can't create type '") +
+                               llvm::getTypeName<T>() +
+                               "' because storage uniquer isn't initialized: "
+                               "the dialect was likely not loaded.");
+#endif
     return ctx->getTypeUniquer().get<typename T::ImplType>(
         [&](TypeStorage *storage) {
           storage->initialize(AbstractType::lookup(T::getTypeID(), ctx));
@@ -137,6 +154,13 @@ struct TypeUniquer {
   static typename std::enable_if_t<
       std::is_same<typename T::ImplType, TypeStorage>::value, T>
   get(MLIRContext *ctx) {
+#ifndef NDEBUG
+    if (!ctx->getTypeUniquer().isSingletonStorageInitialized(T::getTypeID()))
+      llvm::report_fatal_error(llvm::Twine("can't create type '") +
+                               llvm::getTypeName<T>() +
+                               "' because storage uniquer isn't initialized: "
+                               "the dialect was likely not loaded.");
+#endif
     return ctx->getTypeUniquer().get<typename T::ImplType>(T::getTypeID());
   }
 

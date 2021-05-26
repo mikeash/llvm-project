@@ -2,9 +2,9 @@
 // RUN: %clang_cc1 -fopenmp -x c++ -std=c++11 -I %S/Inputs -emit-pch -o %t %s
 // RUN: %clang_cc1 -fopenmp -std=c++11 -include-pch %t -fsyntax-only -I %S/Inputs -verify %s -ast-print | FileCheck %s
 
-// RUN: %clang_cc1 -verify -fopenmp -fopenmp-version=50 -I %S/Inputs -ast-print %s | FileCheck %s --check-prefix=CHECK --check-prefix=OMP50
-// RUN: %clang_cc1 -fopenmp -fopenmp-version=50 -x c++ -std=c++11 -I %S/Inputs -emit-pch -o %t %s
-// RUN: %clang_cc1 -fopenmp -fopenmp-version=50 -std=c++11 -include-pch %t -fsyntax-only -I %S/Inputs -verify %s -ast-print | FileCheck %s --check-prefix=CHECK --check-prefix=OMP50
+// RUN: %clang_cc1 -verify -fopenmp -I %S/Inputs -ast-print %s | FileCheck %s --check-prefix=CHECK --check-prefix=OMP50
+// RUN: %clang_cc1 -fopenmp -x c++ -std=c++11 -I %S/Inputs -emit-pch -o %t %s
+// RUN: %clang_cc1 -fopenmp -std=c++11 -include-pch %t -fsyntax-only -I %S/Inputs -verify %s -ast-print | FileCheck %s --check-prefix=CHECK --check-prefix=OMP50
 
 // RUN: %clang_cc1 -verify -fopenmp-simd -I %S/Inputs -ast-print %s | FileCheck %s
 // RUN: %clang_cc1 -fopenmp-simd -x c++ -std=c++11 -I %S/Inputs -emit-pch -o %t %s
@@ -276,5 +276,9 @@ int main (int argc, char **argv) {
 // CHECK: #pragma omp declare target
 // CHECK-NEXT: int ts = 1;
 // CHECK-NEXT: #pragma omp end declare target
+
+// Do not expect anything here since the region is empty.
+#pragma omp declare target
+#pragma omp end declare target
 
 #endif

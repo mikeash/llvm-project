@@ -13,26 +13,10 @@
 
 namespace Fortran::runtime::io {
 
-// For fixed-width fields, initialize the number of remaining characters.
-// Skip over leading blanks, then return the first non-blank character (if any).
-static std::optional<char32_t> PrepareInput(
-    IoStatementState &io, const DataEdit &edit, std::optional<int> &remaining) {
-  remaining.reset();
-  if (edit.descriptor == DataEdit::ListDirected) {
-    io.GetNextNonBlank();
-  } else {
-    if (edit.width.value_or(0) > 0) {
-      remaining = *edit.width;
-    }
-    io.SkipSpaces(remaining);
-  }
-  return io.NextInField(remaining);
-}
-
 static bool EditBOZInput(IoStatementState &io, const DataEdit &edit, void *n,
     int base, int totalBitSize) {
   std::optional<int> remaining;
-  std::optional<char32_t> next{PrepareInput(io, edit, remaining)};
+  std::optional<char32_t> next{io.PrepareInput(edit, remaining)};
   common::UnsignedInt128 value{0};
   for (; next; next = io.NextInField(remaining)) {
     char32_t ch{*next};
@@ -67,7 +51,7 @@ static bool EditBOZInput(IoStatementState &io, const DataEdit &edit, void *n,
 // Returns true if there's a '-' sign.
 static bool ScanNumericPrefix(IoStatementState &io, const DataEdit &edit,
     std::optional<char32_t> &next, std::optional<int> &remaining) {
-  next = PrepareInput(io, edit, remaining);
+  next = io.PrepareInput(edit, remaining);
   bool negative{false};
   if (next) {
     negative = *next == '-';
@@ -180,10 +164,11 @@ static int ScanRealInput(char *buffer, int bufferSize, IoStatementState &io,
       first == 'E' || first == 'D' || first == 'Q') {
     Put('.'); // input field is normalized to a fraction
     auto start{got};
+    bool bzMode{(edit.modes.editingFlags & blankZero) != 0};
     for (; next; next = io.NextInField(remaining)) {
       char32_t ch{*next};
       if (ch == ' ' || ch == '\t') {
-        if (edit.modes.editingFlags & blankZero) {
+        if (bzMode) {
           ch = '0'; // BZ mode - treat blank as if it were zero
         } else {
           continue;
@@ -206,19 +191,29 @@ static int ScanRealInput(char *buffer, int bufferSize, IoStatementState &io,
     if (next &&
         (*next == 'e' || *next == 'E' || *next == 'd' || *next == 'D' ||
             *next == 'q' || *next == 'Q')) {
+      // Optional exponent letter.  Blanks are allowed between the
+      // optional exponent letter and the exponent value.
       io.SkipSpaces(remaining);
       next = io.NextInField(remaining);
     }
-    exponent = -edit.modes.scale; // default exponent is -kP
+    // The default exponent is -kP, but the scale factor doesn't affect
+    // an explicit exponent.
+    exponent = -edit.modes.scale;
     if (next &&
-        (*next == '-' || *next == '+' || (*next >= '0' && *next <= '9'))) {
+        (*next == '-' || *next == '+' || (*next >= '0' && *next <= '9') ||
+            (bzMode && (*next == ' ' || *next == '\t')))) {
       bool negExpo{*next == '-'};
       if (negExpo || *next == '+') {
         next = io.NextInField(remaining);
       }
-      for (exponent = 0; next && (*next >= '0' && *next <= '9');
-           next = io.NextInField(remaining)) {
-        exponent = 10 * exponent + *next - '0';
+      for (exponent = 0; next; next = io.NextInField(remaining)) {
+        if (*next >= '0' && *next <= '9') {
+          exponent = 10 * exponent + *next - '0';
+        } else if (bzMode && (*next == ' ' || *next == '\t')) {
+          exponent = 10 * exponent;
+        } else {
+          break;
+        }
       }
       if (negExpo) {
         exponent = -exponent;
@@ -238,7 +233,19 @@ static int ScanRealInput(char *buffer, int bufferSize, IoStatementState &io,
     exponent = 0;
     return 0;
   }
-  if (remaining) {
+  // Consume the trailing ')' of a list-directed or NAMELIST complex
+  // input value.
+  if (edit.descriptor == DataEdit::ListDirectedImaginaryPart) {
+    if (next && (*next == ' ' || *next == '\t')) {
+      next = io.NextInField(remaining);
+    }
+    if (!next) { // NextInField fails on separators like ')'
+      next = io.GetCurrentChar();
+      if (next && *next == ')') {
+        io.HandleRelativePosition(1);
+      }
+    }
+  } else if (remaining) {
     while (next && (*next == ' ' || *next == '\t')) {
       next = io.NextInField(remaining);
     }
@@ -249,8 +256,9 @@ static int ScanRealInput(char *buffer, int bufferSize, IoStatementState &io,
   return got;
 }
 
-template <int binaryPrecision>
+template <int KIND>
 bool EditCommonRealInput(IoStatementState &io, const DataEdit &edit, void *n) {
+  constexpr int binaryPrecision{common::PrecisionOfRealKind(KIND)};
   static constexpr int maxDigits{
       common::MaxDecimalConversionDigits(binaryPrecision)};
   static constexpr int bufferSize{maxDigits + 18};
@@ -283,8 +291,9 @@ bool EditCommonRealInput(IoStatementState &io, const DataEdit &edit, void *n) {
   return true;
 }
 
-template <int binaryPrecision>
+template <int KIND>
 bool EditRealInput(IoStatementState &io, const DataEdit &edit, void *n) {
+  constexpr int binaryPrecision{common::PrecisionOfRealKind(KIND)};
   switch (edit.descriptor) {
   case DataEdit::ListDirected:
   case DataEdit::ListDirectedRealPart:
@@ -293,7 +302,7 @@ bool EditRealInput(IoStatementState &io, const DataEdit &edit, void *n) {
   case 'E': // incl. EN, ES, & EX
   case 'D':
   case 'G':
-    return EditCommonRealInput<binaryPrecision>(io, edit, n);
+    return EditCommonRealInput<KIND>(io, edit, n);
   case 'B':
     return EditBOZInput(
         io, edit, n, 2, common::BitsForBinaryPrecision(binaryPrecision));
@@ -325,7 +334,7 @@ bool EditLogicalInput(IoStatementState &io, const DataEdit &edit, bool &x) {
     return false;
   }
   std::optional<int> remaining;
-  std::optional<char32_t> next{PrepareInput(io, edit, remaining)};
+  std::optional<char32_t> next{io.PrepareInput(edit, remaining)};
   if (next && *next == '.') { // skip optional period
     next = io.NextInField(remaining);
   }
@@ -359,29 +368,53 @@ bool EditLogicalInput(IoStatementState &io, const DataEdit &edit, bool &x) {
 // See 13.10.3.1 paragraphs 7-9 in Fortran 2018
 static bool EditDelimitedCharacterInput(
     IoStatementState &io, char *x, std::size_t length, char32_t delimiter) {
+  bool result{true};
   while (true) {
-    if (auto ch{io.GetCurrentChar()}) {
-      io.HandleRelativePosition(1);
-      if (*ch == delimiter) {
-        ch = io.GetCurrentChar();
-        if (ch && *ch == delimiter) {
-          // Repeated delimiter: use as character value.  Can't straddle a
-          // record boundary.
+    auto ch{io.GetCurrentChar()};
+    if (!ch) {
+      if (io.AdvanceRecord()) {
+        continue;
+      } else {
+        result = false; // EOF in character value
+        break;
+      }
+    }
+    io.HandleRelativePosition(1);
+    if (*ch == delimiter) {
+      if (auto next{io.GetCurrentChar()}) {
+        if (*next == delimiter) {
+          // Repeated delimiter: use as character value
           io.HandleRelativePosition(1);
-        } else {
-          std::fill_n(x, length, ' ');
-          return true;
+        } else { // closing delimiter
+          break;
         }
+      } else { // delimiter was at the end of the record
+        if (length > 0) {
+          // Look ahead on next record: if it begins with the delimiter,
+          // treat it as a split character value, ignoring both delimiters
+          ConnectionState &connection{io.GetConnectionState()};
+          auto position{connection.positionInRecord};
+          if (io.AdvanceRecord()) {
+            if (auto next{io.GetCurrentChar()}; next && *next == delimiter) {
+              // Character constant split over a record boundary
+              io.HandleRelativePosition(1);
+              continue;
+            }
+            // Not a character value split over a record boundary.
+            io.BackspaceRecord();
+            connection.HandleAbsolutePosition(position);
+          }
+        }
+        break;
       }
-      if (length > 0) {
-        *x++ = *ch;
-        --length;
-      }
-    } else if (!io.AdvanceRecord()) { // EOF
-      std::fill_n(x, length, ' ');
-      return false;
+    }
+    if (length > 0) {
+      *x++ = *ch;
+      --length;
     }
   }
+  std::fill_n(x, length, ' ');
+  return result;
 }
 
 static bool EditListDirectedDefaultCharacterInput(
@@ -448,10 +481,11 @@ bool EditDefaultCharacterInput(
   return true;
 }
 
+template bool EditRealInput<2>(IoStatementState &, const DataEdit &, void *);
+template bool EditRealInput<3>(IoStatementState &, const DataEdit &, void *);
+template bool EditRealInput<4>(IoStatementState &, const DataEdit &, void *);
 template bool EditRealInput<8>(IoStatementState &, const DataEdit &, void *);
-template bool EditRealInput<11>(IoStatementState &, const DataEdit &, void *);
-template bool EditRealInput<24>(IoStatementState &, const DataEdit &, void *);
-template bool EditRealInput<53>(IoStatementState &, const DataEdit &, void *);
-template bool EditRealInput<64>(IoStatementState &, const DataEdit &, void *);
-template bool EditRealInput<113>(IoStatementState &, const DataEdit &, void *);
+template bool EditRealInput<10>(IoStatementState &, const DataEdit &, void *);
+// TODO: double/double
+template bool EditRealInput<16>(IoStatementState &, const DataEdit &, void *);
 } // namespace Fortran::runtime::io

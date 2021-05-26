@@ -923,6 +923,8 @@ void TextNodeDumper::VisitWhileStmt(const WhileStmt *Node) {
 
 void TextNodeDumper::VisitLabelStmt(const LabelStmt *Node) {
   OS << " '" << Node->getName() << "'";
+  if (Node->isSideEntry())
+    OS << " side_entry";
 }
 
 void TextNodeDumper::VisitGotoStmt(const GotoStmt *Node) {
@@ -964,6 +966,8 @@ void TextNodeDumper::VisitCastExpr(const CastExpr *Node) {
   }
   dumpBasePath(OS, Node);
   OS << ">";
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getFPFeatures());
 }
 
 void TextNodeDumper::VisitImplicitCastExpr(const ImplicitCastExpr *Node) {
@@ -1103,6 +1107,8 @@ void TextNodeDumper::VisitCompoundAssignOperator(
   dumpBareType(Node->getComputationLHSType());
   OS << " ComputeResultTy=";
   dumpBareType(Node->getComputationResultType());
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getStoredFPFeatures());
 }
 
 void TextNodeDumper::VisitAddrLabelExpr(const AddrLabelExpr *Node) {
@@ -1132,6 +1138,14 @@ void TextNodeDumper::VisitCXXFunctionalCastExpr(
     const CXXFunctionalCastExpr *Node) {
   OS << " functional cast to " << Node->getTypeAsWritten().getAsString() << " <"
      << Node->getCastKindName() << ">";
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getFPFeatures());
+}
+
+void TextNodeDumper::VisitCXXStaticCastExpr(const CXXStaticCastExpr *Node) {
+  VisitCXXNamedCastExpr(Node);
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getFPFeatures());
 }
 
 void TextNodeDumper::VisitCXXUnresolvedConstructExpr(
@@ -1407,6 +1421,12 @@ void TextNodeDumper::VisitVectorType(const VectorType *T) {
     break;
   case VectorType::NeonPolyVector:
     OS << " neon poly";
+    break;
+  case VectorType::SveFixedLengthDataVector:
+    OS << " fixed-length sve data vector";
+    break;
+  case VectorType::SveFixedLengthPredicateVector:
+    OS << " fixed-length sve predicate vector";
     break;
   }
   OS << " " << T->getNumElements();

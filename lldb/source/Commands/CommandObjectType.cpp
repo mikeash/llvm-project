@@ -37,6 +37,9 @@
 #include <functional>
 #include <memory>
 
+#define CHECK_FORMATTER_KIND_MASK(VAL)                                         \
+  ((m_formatter_kind_mask & (VAL)) == (VAL))
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -267,7 +270,7 @@ protected:
 static const char *g_synth_addreader_instructions =
     "Enter your Python command(s). Type 'DONE' to end.\n"
     "You must define a Python class with these methods:\n"
-    "    def __init__(self, valobj, dict):\n"
+    "    def __init__(self, valobj, internal_dict):\n"
     "    def num_children(self):\n"
     "    def get_child_at_index(self, index):\n"
     "    def get_child_index(self, name):\n"
@@ -777,6 +780,39 @@ public:
 
   ~CommandObjectTypeFormatterDelete() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (request.GetCursorIndex())
+      return;
+
+    DataVisualization::Categories::ForEach(
+        [this, &request](const lldb::TypeCategoryImplSP &category_sp) {
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemValue))
+            category_sp->GetTypeFormatsContainer()->AutoComplete(request);
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemRegexValue))
+            category_sp->GetRegexTypeFormatsContainer()->AutoComplete(request);
+
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemSummary))
+            category_sp->GetTypeSummariesContainer()->AutoComplete(request);
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemRegexSummary))
+            category_sp->GetRegexTypeSummariesContainer()->AutoComplete(
+                request);
+
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemFilter))
+            category_sp->GetTypeFiltersContainer()->AutoComplete(request);
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemRegexFilter))
+            category_sp->GetRegexTypeFiltersContainer()->AutoComplete(request);
+
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemSynth))
+            category_sp->GetTypeSyntheticsContainer()->AutoComplete(request);
+          if (CHECK_FORMATTER_KIND_MASK(eFormatCategoryItemRegexSynth))
+            category_sp->GetRegexTypeSyntheticsContainer()->AutoComplete(
+                request);
+          return true;
+        });
+  }
+
 protected:
   virtual bool FormatterSpecificDeletion(ConstString typeCS) { return false; }
 
@@ -1044,8 +1080,7 @@ protected:
 
     if (argc == 1) {
       const char *arg = command.GetArgumentAtIndex(0);
-      formatter_regex = std::make_unique<RegularExpression>(
-          llvm::StringRef::withNullAsEmpty(arg));
+      formatter_regex = std::make_unique<RegularExpression>(arg);
       if (!formatter_regex->IsValid()) {
         result.AppendErrorWithFormat("syntax error in regular expression '%s'",
                                      arg);
@@ -1131,9 +1166,7 @@ protected:
               bool escape = true;
               if (category->GetName() == category_regex->GetText()) {
                 escape = false;
-              } else if (category_regex->Execute(
-                             llvm::StringRef::withNullAsEmpty(
-                                 category->GetName()))) {
+              } else if (category_regex->Execute(category->GetName())) {
                 escape = false;
               }
 
@@ -2139,8 +2172,7 @@ protected:
 
     if (argc == 1) {
       const char *arg = command.GetArgumentAtIndex(0);
-      regex = std::make_unique<RegularExpression>(
-          llvm::StringRef::withNullAsEmpty(arg));
+      regex = std::make_unique<RegularExpression>(arg);
       if (!regex->IsValid()) {
         result.AppendErrorWithFormat(
             "syntax error in category regular expression '%s'", arg);
@@ -2160,8 +2192,7 @@ protected:
             bool escape = true;
             if (regex->GetText() == category_sp->GetName()) {
               escape = false;
-            } else if (regex->Execute(llvm::StringRef::withNullAsEmpty(
-                           category_sp->GetName()))) {
+            } else if (regex->Execute(category_sp->GetName())) {
               escape = false;
             }
 

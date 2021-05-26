@@ -2,7 +2,7 @@
 
 This is Apple's fork of llvm-project.  For more information on Apple's
 branching scheme, please see
-[apple-docs/AppleBranchingScheme.md](https://github.com/apple/llvm-project/tree/apple/master/apple-docs/AppleBranchingScheme.md).
+[apple-docs/AppleBranchingScheme.md](https://github.com/apple/llvm-project/tree/apple/main/apple-docs/AppleBranchingScheme.md).
 
 The LLVM project's main README follows.
 
@@ -27,7 +27,7 @@ Welcome to the LLVM project!
 
 The LLVM project has multiple components. The core of the project is
 itself called "LLVM". This contains all of the tools, libraries, and header
-files needed to process intermediate representations and converts it into
+files needed to process intermediate representations and convert them into
 object files.  Tools include an assembler, disassembler, bitcode analyzer, and
 bitcode optimizer.  It also contains basic regression tests.
 
@@ -58,11 +58,7 @@ This is an example work-flow and configuration to get and build the LLVM source:
 
      * ``cd llvm-project``
 
-     * ``mkdir build``
-
-     * ``cd build``
-
-     * ``cmake -G <generator> [options] ../llvm``
+     * ``cmake -S llvm -B build -G <generator> [options]``
 
         Some common build system generators are:
 
@@ -93,7 +89,7 @@ This is an example work-flow and configuration to get and build the LLVM source:
         * ``-DLLVM_ENABLE_ASSERTIONS=On`` --- Compile with assertion checks enabled
           (default is Yes for Debug builds, No for all other build types).
 
-      * ``cmake --build . [-- [options] <target>]`` or your build system specified above
+      * ``cmake --build build [-- [options] <target>]`` or your build system specified above
         directly.
 
         * The default target (i.e. ``ninja`` or ``make``) will build all of LLVM.

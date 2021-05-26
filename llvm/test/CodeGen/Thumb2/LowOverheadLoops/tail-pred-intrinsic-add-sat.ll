@@ -9,15 +9,16 @@ define arm_aapcs_vfpcc void @uadd_sat(i16* noalias nocapture readonly %pSrcA, i1
 ; CHECK-NEXT:    cmp r3, #0
 ; CHECK-NEXT:    it eq
 ; CHECK-NEXT:    popeq {r7, pc}
+; CHECK-NEXT:  .LBB0_1: @ %vector.ph
 ; CHECK-NEXT:    dlstp.16 lr, r3
-; CHECK-NEXT:  .LBB0_1: @ %vector.body
+; CHECK-NEXT:  .LBB0_2: @ %vector.body
 ; CHECK-NEXT:    @ =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    vldrh.u16 q0, [r1], #16
 ; CHECK-NEXT:    vldrh.u16 q1, [r0], #16
 ; CHECK-NEXT:    vqadd.u16 q0, q1, q0
 ; CHECK-NEXT:    vstrh.16 q0, [r2], #16
-; CHECK-NEXT:    letp lr, .LBB0_1
-; CHECK-NEXT:  @ %bb.2: @ %while.end
+; CHECK-NEXT:    letp lr, .LBB0_2
+; CHECK-NEXT:  @ %bb.3: @ %while.end
 ; CHECK-NEXT:    pop {r7, pc}
 entry:
   %cmp7 = icmp eq i32 %blockSize, 0
@@ -26,7 +27,6 @@ entry:
 vector.ph:                                        ; preds = %entry
   %n.rnd.up = add i32 %blockSize, 7
   %n.vec = and i32 %n.rnd.up, -8
-  %trip.count.minus.1 = add i32 %blockSize, -1
   br label %vector.body
 
 vector.body:                                      ; preds = %vector.body, %vector.ph
@@ -58,15 +58,16 @@ define arm_aapcs_vfpcc void @sadd_sat(i16* noalias nocapture readonly %pSrcA, i1
 ; CHECK-NEXT:    cmp r3, #0
 ; CHECK-NEXT:    it eq
 ; CHECK-NEXT:    popeq {r7, pc}
+; CHECK-NEXT:  .LBB1_1: @ %vector.ph
 ; CHECK-NEXT:    dlstp.16 lr, r3
-; CHECK-NEXT:  .LBB1_1: @ %vector.body
+; CHECK-NEXT:  .LBB1_2: @ %vector.body
 ; CHECK-NEXT:    @ =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    vldrh.u16 q0, [r1], #16
 ; CHECK-NEXT:    vldrh.u16 q1, [r0], #16
 ; CHECK-NEXT:    vqadd.s16 q0, q1, q0
 ; CHECK-NEXT:    vstrh.16 q0, [r2], #16
-; CHECK-NEXT:    letp lr, .LBB1_1
-; CHECK-NEXT:  @ %bb.2: @ %while.end
+; CHECK-NEXT:    letp lr, .LBB1_2
+; CHECK-NEXT:  @ %bb.3: @ %while.end
 ; CHECK-NEXT:    pop {r7, pc}
 entry:
   %cmp7 = icmp eq i32 %blockSize, 0
@@ -75,7 +76,6 @@ entry:
 vector.ph:                                        ; preds = %entry
   %n.rnd.up = add i32 %blockSize, 7
   %n.vec = and i32 %n.rnd.up, -8
-  %trip.count.minus.1 = add i32 %blockSize, -1
   br label %vector.body
 
 vector.body:                                      ; preds = %vector.body, %vector.ph

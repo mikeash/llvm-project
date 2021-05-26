@@ -15,6 +15,7 @@
 
 #include "clang-c/Dependencies.h"
 
+#include "clang/Frontend/CompilerInstance.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningService.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningWorker.h"
@@ -101,7 +102,7 @@ public:
   }
 
   void handleModuleDependency(ModuleDeps MD) override {
-    ClangModuleDeps[MD.ContextHash + MD.ModuleName] = std::move(MD);
+    ClangModuleDeps[MD.ID.ContextHash + MD.ID.ModuleName] = std::move(MD);
   }
 
   void handleContextHash(std::string Hash) override {
@@ -111,21 +112,16 @@ public:
   FullDependenciesResult getFullDependencies() const {
     FullDependencies FD;
 
-    FD.ContextHash = std::move(ContextHash);
+    FD.ID.ContextHash = std::move(ContextHash);
 
     FD.FileDeps.assign(Dependencies.begin(), Dependencies.end());
 
     for (auto &&M : ClangModuleDeps) {
       auto &MD = M.second;
       if (MD.ImportedByMainFile)
-        FD.ClangModuleDeps.push_back({MD.ModuleName, ContextHash});
+        FD.ClangModuleDeps.push_back({MD.ID.ModuleName, ContextHash});
     }
 
-    FD.AdditionalNonPathCommandLine = {
-      "-fno-implicit-modules",
-      "-fno-implicit-module-maps",
-    };
-    
     FullDependenciesResult FDR;
 
     for (auto &&M : ClangModuleDeps) {
@@ -149,10 +145,13 @@ private:
 };
 } // namespace
 
+using BuildArgsFn =
+    llvm::function_ref<std::vector<std::string>(const ModuleDeps &)>;
+
 static CXFileDependencies *getFullDependencies(
     DependencyScanningWorker *Worker, ArrayRef<std::string> Compilation,
     const char *WorkingDirectory, CXModuleDiscoveredCallback *MDC,
-    void *Context, CXString *error) {
+    void *Context, CXString *error, BuildArgsFn GetBuildArgs) {
   FullDependencyConsumer Consumer(Worker->AlreadySeen);
   llvm::Error Result = Worker->computeDependenciesForClangInvocation(
       WorkingDirectory, Compilation, Consumer);
@@ -175,37 +174,37 @@ static CXFileDependencies *getFullDependencies(
     for (int I = 0; I < MDS->Count; ++I) {
       CXModuleDependency &M = MDS->Modules[I];
       const ModuleDeps &MD = FDR.DiscoveredModules[I];
-      M.Name = cxstring::createDup(MD.ModuleName);
-      M.ContextHash = cxstring::createDup(MD.ContextHash);
+      M.Name = cxstring::createDup(MD.ID.ModuleName);
+      M.ContextHash = cxstring::createDup(MD.ID.ContextHash);
       M.ModuleMapPath = cxstring::createDup(MD.ClangModuleMapFile);
       M.FileDeps = cxstring::createSet(MD.FileDeps);
       std::vector<std::string> Modules;
-      for (const ClangModuleDep &CMD : MD.ClangModuleDeps)
-        Modules.push_back(CMD.ModuleName + ":" + CMD.ContextHash);
+      for (const ModuleID &MID : MD.ClangModuleDeps)
+        Modules.push_back(MID.ModuleName + ":" + MID.ContextHash);
       M.ModuleDeps = cxstring::createSet(Modules);
-      M.BuildArguments = cxstring::createSet(MD.NonPathCommandLine);
+      M.BuildArguments = cxstring::createSet(GetBuildArgs(MD));
     }
     MDC(Context, MDS);
   }
 
   const FullDependencies &FD = FDR.FullDeps;
   CXFileDependencies *FDeps = new CXFileDependencies;
-  FDeps->ContextHash = cxstring::createDup(FD.ContextHash);
+  FDeps->ContextHash = cxstring::createDup(FD.ID.ContextHash);
   FDeps->FileDeps = cxstring::createSet(FD.FileDeps);
   std::vector<std::string> Modules;
-  for (const ClangModuleDep &CMD : FD.ClangModuleDeps)
-    Modules.push_back(CMD.ModuleName + ":" + CMD.ContextHash);
+  for (const ModuleID &MID : FD.ClangModuleDeps)
+    Modules.push_back(MID.ModuleName + ":" + MID.ContextHash);
   FDeps->ModuleDeps = cxstring::createSet(Modules);
   FDeps->AdditionalArguments =
-    cxstring::createSet(FD.AdditionalNonPathCommandLine);
+    cxstring::createSet(FD.getAdditionalArgsWithoutModulePaths());
   return FDeps;
 }
 
-CXFileDependencies *
-clang_experimental_DependencyScannerWorker_getFileDependencies_v0(
-    CXDependencyScannerWorker W, int argc, const char *const *argv,
-    const char *WorkingDirectory, CXModuleDiscoveredCallback *MDC,
-    void *Context, CXString *error) {
+static CXFileDependencies *
+getFileDependencies(CXDependencyScannerWorker W, int argc,
+                    const char *const *argv, const char *WorkingDirectory,
+                    CXModuleDiscoveredCallback *MDC, void *Context,
+                    CXString *error, BuildArgsFn GetBuildArgs) {
   if (!W || argc < 2)
     return nullptr;
   if (error)
@@ -218,11 +217,44 @@ clang_experimental_DependencyScannerWorker_getFileDependencies_v0(
     for (int i = 2; i < argc; ++i)
       Compilation.push_back(argv[i]);
   else {
-    return nullptr; // TODO: Run the driver to get -cc1 args.
+    // Run the driver to get -cc1 args.
+    ArrayRef<const char *> CArgs = llvm::makeArrayRef(argv, argv+argc);
+    IntrusiveRefCntPtr<DiagnosticsEngine>
+    Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions));
+    auto CI = createInvocationFromCommandLine(CArgs, Diags, /*VFS=*/nullptr,
+      /*ShouldRecoverOnErrors=*/false, &Compilation);
+    if (!CI) {
+      if (error)
+        *error = cxstring::createRef("failed creating 'cc1' arguments");
+      return nullptr;
+    }
   }
 
   if (Worker->getFormat() == ScanningOutputFormat::Full)
     return getFullDependencies(Worker, Compilation, WorkingDirectory, MDC,
-                               Context, error);
+                               Context, error, GetBuildArgs);
   return getFlatDependencies(Worker, Compilation, WorkingDirectory, error);
+}
+
+CXFileDependencies *
+clang_experimental_DependencyScannerWorker_getFileDependencies_v0(
+    CXDependencyScannerWorker W, int argc, const char *const *argv,
+    const char *WorkingDirectory, CXModuleDiscoveredCallback *MDC,
+    void *Context, CXString *error) {
+  return getFileDependencies(W, argc, argv, WorkingDirectory, MDC, Context,
+                             error, [](const ModuleDeps &MD) {
+                               return MD.getAdditionalArgsWithoutModulePaths();
+                             });
+}
+
+CXFileDependencies *
+clang_experimental_DependencyScannerWorker_getFileDependencies_v1(
+    CXDependencyScannerWorker W, int argc, const char *const *argv,
+    const char *WorkingDirectory, CXModuleDiscoveredCallback *MDC,
+    void *Context, CXString *error) {
+  return getFileDependencies(
+      W, argc, argv, WorkingDirectory, MDC, Context, error,
+      [](const ModuleDeps &MD) {
+        return MD.getCanonicalCommandLineWithoutModulePaths();
+      });
 }

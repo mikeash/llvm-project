@@ -383,12 +383,20 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_ASRLi:
     case MVE_ASRLr:
     case MVE_LSRL:
+    case MVE_LSLLi:
+    case MVE_LSLLr:
     case MVE_SQRSHR:
+    case MVE_SQRSHRL:
     case MVE_SQSHL:
+    case MVE_SQSHLL:
     case MVE_SRSHR:
+    case MVE_SRSHRL:
     case MVE_UQRSHL:
+    case MVE_UQRSHLL:
     case MVE_UQSHL:
+    case MVE_UQSHLL:
     case MVE_URSHR:
+    case MVE_URSHRL:
     case MVE_VABDf16:
     case MVE_VABDf32:
     case MVE_VABDs16:
@@ -726,6 +734,12 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VMULi16:
     case MVE_VMULi8:
     case MVE_VMULi32:
+    case MVE_VMULHs32:
+    case MVE_VMULHs16:
+    case MVE_VMULHs8:
+    case MVE_VMULHu32:
+    case MVE_VMULHu16:
+    case MVE_VMULHu8:
     case MVE_VMVN:
     case MVE_VMVNimmi16:
     case MVE_VMVNimmi32:
@@ -739,6 +753,28 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VORRimmi16:
     case MVE_VORRimmi32:
     case MVE_VPST:
+    case MVE_VPTv16i8:
+    case MVE_VPTv8i16:
+    case MVE_VPTv4i32:
+    case MVE_VPTv16i8r:
+    case MVE_VPTv8i16r:
+    case MVE_VPTv4i32r:
+    case MVE_VPTv16s8:
+    case MVE_VPTv8s16:
+    case MVE_VPTv4s32:
+    case MVE_VPTv16s8r:
+    case MVE_VPTv8s16r:
+    case MVE_VPTv4s32r:
+    case MVE_VPTv16u8:
+    case MVE_VPTv8u16:
+    case MVE_VPTv4u32:
+    case MVE_VPTv16u8r:
+    case MVE_VPTv8u16r:
+    case MVE_VPTv4u32r:
+    case MVE_VPTv8f16:
+    case MVE_VPTv4f32:
+    case MVE_VPTv8f16r:
+    case MVE_VPTv4f32r:
     case MVE_VQABSs16:
     case MVE_VQABSs32:
     case MVE_VQABSs8:
@@ -754,6 +790,12 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VQADDu16:
     case MVE_VQADDu32:
     case MVE_VQADDu8:
+    case MVE_VQDMULH_qr_s16:
+    case MVE_VQDMULH_qr_s32:
+    case MVE_VQDMULH_qr_s8:
+    case MVE_VQDMULHi16:
+    case MVE_VQDMULHi32:
+    case MVE_VQDMULHi8:
     case MVE_VQDMULL_qr_s16bh:
     case MVE_VQDMULL_qr_s16th:
     case MVE_VQDMULL_qr_s32bh:
@@ -762,6 +804,12 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VQDMULLs16th:
     case MVE_VQDMULLs32bh:
     case MVE_VQDMULLs32th:
+    case MVE_VQRDMULH_qr_s16:
+    case MVE_VQRDMULH_qr_s32:
+    case MVE_VQRDMULH_qr_s8:
+    case MVE_VQRDMULHi16:
+    case MVE_VQRDMULHi32:
+    case MVE_VQRDMULHi8:
     case MVE_VQNEGs16:
     case MVE_VQNEGs32:
     case MVE_VQNEGs8:
@@ -864,6 +912,12 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VRINTf32P:
     case MVE_VRINTf32X:
     case MVE_VRINTf32Z:
+    case MVE_VRMULHs32:
+    case MVE_VRMULHs16:
+    case MVE_VRMULHs8:
+    case MVE_VRMULHu32:
+    case MVE_VRMULHu16:
+    case MVE_VRMULHu8:
     case MVE_VRSHL_by_vecs16:
     case MVE_VRSHL_by_vecs32:
     case MVE_VRSHL_by_vecs8:
@@ -960,6 +1014,20 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VSUBi16:
     case MVE_VSUBi32:
     case MVE_VSUBi8:
+    case VLDR_P0_off:
+    case VLDR_P0_post:
+    case VLDR_P0_pre:
+    case VLDR_VPR_off:
+    case VLDR_VPR_post:
+    case VLDR_VPR_pre:
+    case VSTR_P0_off:
+    case VSTR_P0_post:
+    case VSTR_P0_pre:
+    case VSTR_VPR_off:
+    case VSTR_VPR_post:
+    case VSTR_VPR_pre:
+    case VMRS_P0:
+    case VMRS_VPR:
       return true;
     }
   };
@@ -984,27 +1052,16 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
   ARMSubtarget ST(TM->getTargetTriple(), std::string(TM->getTargetCPU()),
                   std::string(TM->getTargetFeatureString()),
                   *static_cast<const ARMBaseTargetMachine *>(TM.get()), false);
-  const ARMBaseInstrInfo *TII = ST.getInstrInfo();
+
   auto MII = TM->getMCInstrInfo();
-
   for (unsigned i = 0; i < ARM::INSTRUCTION_LIST_END; ++i) {
-    const MCInstrDesc &Desc = TII->get(i);
-
-    for (auto &Op : Desc.operands()) {
-      // Only check instructions that access the MQPR regs.
-      if ((Op.OperandType & MCOI::OPERAND_REGISTER) == 0 ||
-          (Op.RegClass != ARM::MQPRRegClassID &&
-           Op.RegClass != ARM::QQPRRegClassID &&
-           Op.RegClass != ARM::QQQQPRRegClassID))
-        continue;
-
-      uint64_t Flags = MII->get(i).TSFlags;
-      bool Valid = (Flags & ARMII::ValidForTailPredication) != 0;
-      ASSERT_EQ(IsValidTPOpcode(i), Valid)
-                << MII->getName(i)
-                << ": mismatched expectation for tail-predicated safety\n";
-      break;
-    }
+    uint64_t Flags = MII->get(i).TSFlags;
+    if ((Flags & ARMII::DomainMask) != ARMII::DomainMVE)
+      continue;
+    bool Valid = (Flags & ARMII::ValidForTailPredication) != 0;
+    ASSERT_EQ(IsValidTPOpcode(i), Valid)
+              << MII->getName(i)
+              << ": mismatched expectation for tail-predicated safety\n";
   }
 }
 

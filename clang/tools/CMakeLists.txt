@@ -2,6 +2,7 @@ create_subdirectory_options(CLANG TOOL)
 
 add_clang_subdirectory(diagtool)
 add_clang_subdirectory(driver)
+add_clang_subdirectory(apinotes-test)
 add_clang_subdirectory(clang-diff)
 add_clang_subdirectory(clang-format)
 add_clang_subdirectory(clang-format-vs)
@@ -10,13 +11,19 @@ add_clang_subdirectory(clang-import-test)
 add_clang_subdirectory(clang-offload-bundler)
 add_clang_subdirectory(clang-offload-wrapper)
 add_clang_subdirectory(clang-scan-deps)
+add_clang_subdirectory(clang-repl)
 
 add_clang_subdirectory(c-index-test)
 add_clang_subdirectory(IndexStore)
 
 add_clang_subdirectory(clang-rename)
 add_clang_subdirectory(clang-refactor)
-if(UNIX)
+
+add_clang_subdirectory(clang-refactor-test)
+
+# For MinGW we only enable shared library if LLVM_LINK_LLVM_DYLIB=ON.
+# Without that option resulting library is too close to 2^16 DLL exports limit.
+if(UNIX OR (MINGW AND LLVM_LINK_LLVM_DYLIB))
   add_clang_subdirectory(clang-shlib)
 endif()
 
@@ -42,5 +49,4 @@ add_llvm_external_project(clang-tools-extra extra)
 # libclang may require clang-tidy in clang-tools-extra.
 add_clang_subdirectory(libclang)
 
-add_clang_subdirectory(clang-refactor-test)
-
+add_clang_subdirectory(amdgpu-arch)

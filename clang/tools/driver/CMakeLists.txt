@@ -94,7 +94,7 @@ endif()
 
 if(CLANG_ORDER_FILE AND
     (LLVM_LINKER_IS_LD64 OR LLVM_LINKER_IS_GOLD OR LLVM_LINKER_IS_LLD))
-  include(CheckLinkerFlag)
+  include(LLVMCheckLinkerFlag)
 
   if (LLVM_LINKER_IS_LD64)
     set(LINKER_ORDER_FILE_OPTION "-Wl,-order_file,${CLANG_ORDER_FILE}")
@@ -105,7 +105,7 @@ if(CLANG_ORDER_FILE AND
   endif()
 
   # This is a test to ensure the actual order file works with the linker.
-  check_linker_flag(${LINKER_ORDER_FILE_OPTION} LINKER_ORDER_FILE_WORKS)
+  llvm_check_linker_flag(CXX ${LINKER_ORDER_FILE_OPTION} LINKER_ORDER_FILE_WORKS)
 
   # Passing an empty order file disables some linker layout optimizations.
   # To work around this and enable workflows for re-linking when the order file
@@ -118,4 +118,27 @@ if(CLANG_ORDER_FILE AND
     target_link_libraries(clang PRIVATE ${LINKER_ORDER_FILE_OPTION})
     set_target_properties(clang PROPERTIES LINK_DEPENDS ${CLANG_ORDER_FILE})
   endif()
+endif()
+
+# Add features.json file into usr/share/clang
+set(features_file_src "${CMAKE_CURRENT_SOURCE_DIR}/features.json")
+set(features_file_dest "${CMAKE_BINARY_DIR}/share/clang/features.json")
+
+add_custom_command(OUTPUT ${features_file_dest}
+                   COMMAND ${CMAKE_COMMAND} -E make_directory
+                     ${CMAKE_BINARY_DIR}/share/clang
+                   COMMAND ${CMAKE_COMMAND} -E copy
+                     ${features_file_src}
+                     ${features_file_dest}
+                   DEPENDS ${features_file_src})
+
+add_custom_target(clang-features-file DEPENDS ${features_file_dest})
+add_dependencies(clang clang-features-file)
+install(FILES ${features_file_dest}
+        DESTINATION "share/clang"
+        COMPONENT clang)
+if(NOT LLVM_ENABLE_IDE)
+  add_llvm_install_targets("install-features-file"
+                           DEPENDS clang-features-file
+                           COMPONENT clang)
 endif()

@@ -8,7 +8,7 @@
 
 #include "SymbolVendorMacOSX.h"
 
-#include <string.h>
+#include <cstring>
 
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
 #include "lldb/Core/Module.h"
@@ -32,9 +32,6 @@ LLDB_PLUGIN_DEFINE(SymbolVendorMacOSX)
 // SymbolVendorMacOSX constructor
 SymbolVendorMacOSX::SymbolVendorMacOSX(const lldb::ModuleSP &module_sp)
     : SymbolVendor(module_sp) {}
-
-// Destructor
-SymbolVendorMacOSX::~SymbolVendorMacOSX() {}
 
 static bool UUIDsMatch(Module *module, ObjectFile *ofile,
                        lldb_private::Stream *feedback_strm) {

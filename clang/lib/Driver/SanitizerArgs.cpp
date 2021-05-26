@@ -60,8 +60,7 @@ static const SanitizerMask AlwaysRecoverable =
     SanitizerKind::KernelAddress | SanitizerKind::KernelHWAddress;
 static const SanitizerMask NeedsLTO = SanitizerKind::CFI;
 static const SanitizerMask TrappingSupported =
-    (SanitizerKind::Undefined & ~SanitizerKind::Vptr) |
-    SanitizerKind::UnsignedIntegerOverflow | SanitizerKind::ImplicitConversion |
+    (SanitizerKind::Undefined & ~SanitizerKind::Vptr) | SanitizerKind::Integer |
     SanitizerKind::Nullability | SanitizerKind::LocalBounds |
     SanitizerKind::CFI | SanitizerKind::FloatDivideByZero |
     SanitizerKind::ObjCCast;
@@ -134,41 +133,41 @@ static void validateSpecialCaseListFormat(const Driver &D,
     D.Diag(MalformedSCLErrorDiagID) << BLError;
 }
 
-static void addDefaultBlacklists(const Driver &D, SanitizerMask Kinds,
-                                 std::vector<std::string> &BlacklistFiles) {
-  struct Blacklist {
+static void addDefaultIgnorelists(const Driver &D, SanitizerMask Kinds,
+                                 std::vector<std::string> &IgnorelistFiles) {
+  struct Ignorelist {
     const char *File;
     SanitizerMask Mask;
-  } Blacklists[] = {{"asan_blacklist.txt", SanitizerKind::Address},
-                    {"hwasan_blacklist.txt", SanitizerKind::HWAddress},
-                    {"memtag_blacklist.txt", SanitizerKind::MemTag},
-                    {"msan_blacklist.txt", SanitizerKind::Memory},
-                    {"tsan_blacklist.txt", SanitizerKind::Thread},
-                    {"dfsan_abilist.txt", SanitizerKind::DataFlow},
-                    {"cfi_blacklist.txt", SanitizerKind::CFI},
-                    {"ubsan_blacklist.txt",
-                     SanitizerKind::Undefined | SanitizerKind::Integer |
-                         SanitizerKind::Nullability |
-                         SanitizerKind::FloatDivideByZero}};
+  } Ignorelists[] = {{"asan_ignorelist.txt", SanitizerKind::Address},
+                     {"hwasan_ignorelist.txt", SanitizerKind::HWAddress},
+                     {"memtag_ignorelist.txt", SanitizerKind::MemTag},
+                     {"msan_ignorelist.txt", SanitizerKind::Memory},
+                     {"tsan_ignorelist.txt", SanitizerKind::Thread},
+                     {"dfsan_abilist.txt", SanitizerKind::DataFlow},
+                     {"cfi_ignorelist.txt", SanitizerKind::CFI},
+                     {"ubsan_ignorelist.txt",
+                      SanitizerKind::Undefined | SanitizerKind::Integer |
+                          SanitizerKind::Nullability |
+                          SanitizerKind::FloatDivideByZero}};
 
-  for (auto BL : Blacklists) {
+  for (auto BL : Ignorelists) {
     if (!(Kinds & BL.Mask))
       continue;
 
     clang::SmallString<64> Path(D.ResourceDir);
     llvm::sys::path::append(Path, "share", BL.File);
     if (D.getVFS().exists(Path))
-      BlacklistFiles.push_back(std::string(Path.str()));
+      IgnorelistFiles.push_back(std::string(Path.str()));
     else if (BL.Mask == SanitizerKind::CFI)
-      // If cfi_blacklist.txt cannot be found in the resource dir, driver
+      // If cfi_ignorelist.txt cannot be found in the resource dir, driver
       // should fail.
       D.Diag(clang::diag::err_drv_no_such_file) << Path;
   }
   validateSpecialCaseListFormat(
-      D, BlacklistFiles, clang::diag::err_drv_malformed_sanitizer_blacklist);
+      D, IgnorelistFiles, clang::diag::err_drv_malformed_sanitizer_ignorelist);
 }
 
-/// Parse -f(no-)?sanitize-(coverage-)?(white|black)list argument's values,
+/// Parse -f(no-)?sanitize-(coverage-)?(white|ignore)list argument's values,
 /// diagnosing any invalid file paths and validating special case list format.
 static void parseSpecialCaseListArg(const Driver &D,
                                     const llvm::opt::ArgList &Args,
@@ -177,7 +176,7 @@ static void parseSpecialCaseListArg(const Driver &D,
                                     llvm::opt::OptSpecifier NoSCLOptionID,
                                     unsigned MalformedSCLErrorDiagID) {
   for (const auto *Arg : Args) {
-    // Match -fsanitize-(coverage-)?(white|black)list.
+    // Match -fsanitize-(coverage-)?(white|ignore)list.
     if (Arg->getOption().matches(SCLOptionID)) {
       Arg->claim();
       std::string SCLPath = Arg->getValue();
@@ -186,7 +185,7 @@ static void parseSpecialCaseListArg(const Driver &D,
       } else {
         D.Diag(clang::diag::err_drv_no_such_file) << SCLPath;
       }
-      // Match -fno-sanitize-blacklist.
+      // Match -fno-sanitize-ignorelist.
     } else if (Arg->getOption().matches(NoSCLOptionID)) {
       Arg->claim();
       SCLFiles.clear();
@@ -495,8 +494,10 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         << lastArgumentForMask(D, Args, Kinds & NeedsLTO) << "-flto";
   }
 
-  if ((Kinds & SanitizerKind::ShadowCallStack) && TC.getTriple().isAArch64() &&
-      !llvm::AArch64::isX18ReservedByDefault(TC.getTriple()) &&
+  if ((Kinds & SanitizerKind::ShadowCallStack) &&
+      ((TC.getTriple().isAArch64() &&
+        !llvm::AArch64::isX18ReservedByDefault(TC.getTriple())) ||
+       TC.getTriple().isRISCV()) &&
       !Args.hasArg(options::OPT_ffixed_x18)) {
     D.Diag(diag::err_drv_argument_only_allowed_with)
         << lastArgumentForMask(D, Args, Kinds & SanitizerKind::ShadowCallStack)
@@ -580,18 +581,18 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
   TrappingKinds &= Kinds;
   RecoverableKinds &= ~TrappingKinds;
 
-  // Setup blacklist files.
-  // Add default blacklist from resource directory for activated sanitizers, and
-  // validate special case lists format.
-  if (!Args.hasArgNoClaim(options::OPT_fno_sanitize_blacklist))
-    addDefaultBlacklists(D, Kinds, SystemBlacklistFiles);
+  // Setup ignorelist files.
+  // Add default ignorelist from resource directory for activated sanitizers,
+  // and validate special case lists format.
+  if (!Args.hasArgNoClaim(options::OPT_fno_sanitize_ignorelist))
+    addDefaultIgnorelists(D, Kinds, SystemIgnorelistFiles);
 
-  // Parse -f(no-)?sanitize-blacklist options.
+  // Parse -f(no-)?sanitize-ignorelist options.
   // This also validates special case lists format.
-  parseSpecialCaseListArg(D, Args, UserBlacklistFiles,
-                          options::OPT_fsanitize_blacklist,
-                          options::OPT_fno_sanitize_blacklist,
-                          clang::diag::err_drv_malformed_sanitizer_blacklist);
+  parseSpecialCaseListArg(D, Args, UserIgnorelistFiles,
+                          options::OPT_fsanitize_ignorelist_EQ,
+                          options::OPT_fno_sanitize_ignorelist,
+                          clang::diag::err_drv_malformed_sanitizer_ignorelist);
 
   // Parse -f[no-]sanitize-memory-track-origins[=level] options.
   if (AllAddedKinds & SanitizerKind::Memory) {
@@ -745,7 +746,7 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
       CoverageFeatures |= CoverageFunc;
   }
 
-  // Parse -fsanitize-coverage-(black|white)list options if coverage enabled.
+  // Parse -fsanitize-coverage-(ignore|white)list options if coverage enabled.
   // This also validates special case lists format.
   // Here, OptSpecifier() acts as a never-matching command-line argument.
   // So, there is no way to clear coverage lists but you can append to them.
@@ -755,9 +756,9 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         options::OPT_fsanitize_coverage_allowlist, OptSpecifier(),
         clang::diag::err_drv_malformed_sanitizer_coverage_whitelist);
     parseSpecialCaseListArg(
-        D, Args, CoverageBlocklistFiles,
-        options::OPT_fsanitize_coverage_blocklist, OptSpecifier(),
-        clang::diag::err_drv_malformed_sanitizer_coverage_blacklist);
+        D, Args, CoverageIgnorelistFiles,
+        options::OPT_fsanitize_coverage_ignorelist, OptSpecifier(),
+        clang::diag::err_drv_malformed_sanitizer_coverage_ignorelist);
   }
 
   SharedRuntime =
@@ -824,6 +825,22 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
       AsanInvalidPointerSub = true;
     }
 
+    if (TC.getTriple().isOSDarwin() &&
+        (Args.hasArg(options::OPT_mkernel) ||
+         Args.hasArg(options::OPT_fapple_kext))) {
+      AsanDtorKind = llvm::AsanDtorKind::None;
+    }
+
+    if (const auto *Arg =
+            Args.getLastArg(options::OPT_sanitize_address_destructor_EQ)) {
+      auto parsedAsanDtorKind = AsanDtorKindFromString(Arg->getValue());
+      if (parsedAsanDtorKind == llvm::AsanDtorKind::Invalid) {
+        TC.getDriver().Diag(clang::diag::err_drv_unsupported_option_argument)
+            << Arg->getOption().getName() << Arg->getValue();
+      }
+      AsanDtorKind = parsedAsanDtorKind;
+    }
+
   } else {
     AsanUseAfterScope = false;
     // -fsanitize=pointer-compare/pointer-subtract requires -fsanitize=address.
@@ -848,6 +865,11 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
     } else {
       HwasanAbi = "interceptor";
     }
+    if (TC.getTriple().getArch() == llvm::Triple::x86_64)
+      HwasanUseAliases = Args.hasFlag(
+          options::OPT_fsanitize_hwaddress_experimental_aliasing,
+          options::OPT_fno_sanitize_hwaddress_experimental_aliasing,
+          HwasanUseAliases);
   }
 
   if (AllAddedKinds & SanitizerKind::SafeStack) {
@@ -865,6 +887,10 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
                                 options::OPT_fno_sanitize_link_cxx_runtime,
                                 LinkCXXRuntimes) ||
                     D.CCCIsCXX();
+
+  NeedsMemProfRt = Args.hasFlag(options::OPT_fmemory_profile,
+                                options::OPT_fmemory_profile_EQ,
+                                options::OPT_fno_memory_profile, false);
 
   // Finally, initialize the set of available and recoverable sanitizers.
   Sanitizers.Mask |= Kinds;
@@ -926,10 +952,15 @@ static bool hasTargetFeatureMTE(const llvm::opt::ArgStringList &CmdArgs) {
 void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
                             llvm::opt::ArgStringList &CmdArgs,
                             types::ID InputType) const {
-  // NVPTX doesn't currently support sanitizers.  Bailing out here means that
-  // e.g. -fsanitize=address applies only to host code, which is what we want
-  // for now.
-  if (TC.getTriple().isNVPTX())
+  // NVPTX doesn't currently support sanitizers.  Bailing out here means
+  // that e.g. -fsanitize=address applies only to host code, which is what we
+  // want for now.
+  //
+  // AMDGPU sanitizer support is experimental and controlled by -fgpu-sanitize.
+  if (TC.getTriple().isNVPTX() ||
+      (TC.getTriple().isAMDGPU() &&
+       !Args.hasFlag(options::OPT_fgpu_sanitize, options::OPT_fno_gpu_sanitize,
+                     false)))
     return;
 
   // Translate available CoverageFeatures to corresponding clang-cc1 flags.
@@ -961,8 +992,8 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   }
   addSpecialCaseListOpt(
       Args, CmdArgs, "-fsanitize-coverage-allowlist=", CoverageAllowlistFiles);
-  addSpecialCaseListOpt(
-      Args, CmdArgs, "-fsanitize-coverage-blocklist=", CoverageBlocklistFiles);
+  addSpecialCaseListOpt(Args, CmdArgs, "-fsanitize-coverage-ignorelist=",
+                        CoverageIgnorelistFiles);
 
   if (TC.getTriple().isOSWindows() && needsUbsanRt()) {
     // Instruct the code generator to embed linker directives in the object file
@@ -1001,9 +1032,9 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
         Args.MakeArgString("-fsanitize-trap=" + toString(TrapSanitizers)));
 
   addSpecialCaseListOpt(Args, CmdArgs,
-                        "-fsanitize-blacklist=", UserBlacklistFiles);
+                        "-fsanitize-ignorelist=", UserIgnorelistFiles);
   addSpecialCaseListOpt(Args, CmdArgs,
-                        "-fsanitize-system-blacklist=", SystemBlacklistFiles);
+                        "-fsanitize-system-ignorelist=", SystemIgnorelistFiles);
 
   if (MsanTrackOrigins)
     CmdArgs.push_back(Args.MakeArgString("-fsanitize-memory-track-origins=" +
@@ -1067,6 +1098,13 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   if (AsanInvalidPointerSub) {
     CmdArgs.push_back("-mllvm");
     CmdArgs.push_back("-asan-detect-invalid-pointer-sub");
+  }
+
+  // Only pass the option to the frontend if the user requested,
+  // otherwise the frontend will just use the codegen default.
+  if (AsanDtorKind != llvm::AsanDtorKind::Invalid) {
+    CmdArgs.push_back(Args.MakeArgString("-fsanitize-address-destructor=" +
+                                         AsanDtorKindToString(AsanDtorKind)));
   }
 
   if (!HwasanAbi.empty()) {

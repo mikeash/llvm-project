@@ -104,10 +104,10 @@ def warn_cxx98_compat_raw_string_literal : Warning<
   "raw string literals are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
 
-def ext_multichar_character_literal : ExtWarn<
+def warn_multichar_character_literal : Warning<
   "multi-character character constant">, InGroup<MultiChar>;
-def ext_four_char_character_literal : Extension<
-  "multi-character character constant">, InGroup<FourByteMultiChar>;
+def warn_four_char_character_literal : Warning<
+  "multi-character character constant">, InGroup<FourByteMultiChar>, DefaultIgnore;
 
 
 // Unicode and UCNs
@@ -179,6 +179,9 @@ def err_invalid_suffix_constant : Error<
 def warn_cxx11_compat_digit_separator : Warning<
   "digit separators are incompatible with C++ standards before C++14">,
   InGroup<CXXPre14Compat>, DefaultIgnore;
+def warn_c2x_compat_digit_separator : Warning<
+  "digit separators are incompatible with C standards before C2x">,
+  InGroup<CPre2xCompat>, DefaultIgnore;
 def err_digit_separator_not_between_digits : Error<
   "digit separator cannot appear at %select{start|end}0 of digit sequence">;
 def warn_extraneous_char_constant : Warning<
@@ -695,6 +698,9 @@ def err_mmap_missing_module_unqualified : Error<
   "no module named '%0' visible from '%1'">;
 def err_mmap_missing_module_qualified : Error<
   "no module named '%0' in '%1'">;
+def err_mmap_missing_parent_module: Error<
+  "no module named '%0' %select{found|in '%2'}1, "
+  "parent module must be defined before the submodule">;
 def err_mmap_top_level_inferred_submodule : Error<
   "only submodules and framework modules may be inferred with wildcard syntax">;
 def err_mmap_inferred_no_umbrella : Error<

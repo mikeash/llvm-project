@@ -22,7 +22,6 @@
 #include "Standalone/StandaloneDialect.h"
 
 int main(int argc, char **argv) {
-  mlir::registerAllDialects();
   mlir::registerAllPasses();
   // TODO: Register standalone passes here.
 
@@ -34,6 +33,6 @@ int main(int argc, char **argv) {
   // will be *parsed* by the tool, not the one generated
   // registerAllDialects(registry);
 
-  return failed(
+  return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "Standalone optimizer driver\n", registry));
 }

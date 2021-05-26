@@ -1,12 +1,12 @@
 =========================
-LLVM 12.0.0 Release Notes
+LLVM 13.0.0 Release Notes
 =========================
 
 .. contents::
     :local:
 
 .. warning::
-   These are in-progress notes for the upcoming LLVM 12 release.
+   These are in-progress notes for the upcoming LLVM 13 release.
    Release notes for previous releases can be found on
    `the Download Page <https://releases.llvm.org/download.html>`_.
 
@@ -15,7 +15,7 @@ Introduction
 ============
 
 This document contains the release notes for the LLVM Compiler Infrastructure,
-release 12.0.0.  Here we describe the status of LLVM, including major improvements
+release 13.0.0.  Here we describe the status of LLVM, including major improvements
 from the previous release, improvements in various subprojects of LLVM, and
 some of the current users of the code.  All LLVM releases may be downloaded
 from the `LLVM releases web site <https://llvm.org/releases/>`_.
@@ -40,8 +40,6 @@ Non-comprehensive list of changes in this release
    functionality, or simply have a lot to talk about), see the `NOTE` below
    for adding a new subsection.
 
-* ...
-
 
 .. NOTE
    If you would like to document a larger change, then you can add a
@@ -53,25 +51,35 @@ Non-comprehensive list of changes in this release
 
    Makes programs 10x faster by doing Special New Thing.
 
+* Windows Control-flow Enforcement Technology: the ``-ehcontguard`` option now
+  emits valid unwind entrypoints which are validated when the context is being
+  set during exception handling.
 
 Changes to the LLVM IR
 ----------------------
 
-* ...
+* The ``inalloca`` attribute now has a mandatory type field, similar
+  to ``byval`` and ``sret``.
 
-* Added the ``byref`` attribute to better represent argument passing
-  for the `amdgpu_kernel` calling convention.
+* The opaque pointer type ``ptr`` has been introduced. It is still in the
+  process of being worked on and should not be used yet.
 
 Changes to building LLVM
 ------------------------
 
+* The build system now supports building multiple distributions, so that you can
+  e.g. have one distribution containing just tools and another for libraries (to
+  enable development). See :ref:`Multi-distribution configurations` for details.
+
 Changes to TableGen
 -------------------
 
-* The syntax for specifying an integer range in a range list has changed.
-  The old syntax used a hyphen in the range (e.g., ``{0-9}``). The new syntax
-  uses the "`...`" range punctuator (e.g., ``{0...9}``). The hyphen syntax
-  is deprecated. The "TableGen Language Reference" document has been updated.
+Changes to Backend Code Generation
+----------------------------------
+
+* When lowering calls, only ABI attributes on the call itself are checked, not
+  the caller. Frontends need to make sure to properly set ABI attributes on
+  calls (and always should have).
 
 Changes to the ARM Backend
 --------------------------
@@ -83,6 +91,10 @@ Changes to the MIPS Target
 
 During this release ...
 
+Changes to the Hexagon Target
+-----------------------------
+
+* The Hexagon target now supports V68/HVX ISA.
 
 Changes to the PowerPC Target
 -----------------------------
@@ -94,18 +106,10 @@ Changes to the X86 Target
 
 During this release ...
 
-* The 'mpx' feature was removed from the backend. It had been removed from clang
-  frontend in 10.0. Mention of the 'mpx' feature in an IR file will print a
-  message to stderr, but IR should still compile.
-* Support for -march=sapphirerapids was added.
-
 Changes to the AMDGPU Target
 -----------------------------
 
 During this release ...
-
-* The new ``byref`` attribute is now the preferred method for
-  representing aggregate kernel arguments.
 
 Changes to the AVR Target
 -----------------------------
@@ -121,7 +125,6 @@ Changes to the OCaml bindings
 -----------------------------
 
 
-
 Changes to the C API
 --------------------
 
@@ -129,6 +132,13 @@ Changes to the C API
 Changes to the Go bindings
 --------------------------
 
+
+Changes to the FastISel infrastructure
+--------------------------------------
+
+* FastISel no longer tracks killed registers, and instead leaves this to the
+  register allocator. This means that ``hasTrivialKill()`` is removed, as well
+  as the ``OpNIsKill`` parameters to the ``fastEmit_*()`` family of functions.
 
 Changes to the DAG infrastructure
 ---------------------------------
@@ -142,18 +152,26 @@ During this release ...
 Changes to the LLVM tools
 ---------------------------------
 
-* llvm-readobj and llvm-readelf behavior has changed to report an error when
-  executed with no input files instead of reading an input from stdin.
-  Reading from stdin can still be achieved by specifying `-` as an input file.
+* The options ``--build-id-link-{dir,input,output}`` have been deleted.
+  (`D96310 <https://reviews.llvm.org/D96310>`_)
+
+* Support for in-order processors has been added to ``llvm-mca``.
+  (`D94928 <https://reviews.llvm.org/D94928>`_)
+
+* llvm-objdump supports ``-M {att,intel}`` now.
+  ``--x86-asm-syntax`` is a deprecated internal option which will be removed in LLVM 14.0.0.
+  (`D101695 <https://reviews.llvm.org/D101695>`_)
 
 Changes to LLDB
 ---------------------------------
 
-External Open Source Projects Using LLVM 12
+Changes to Sanitizers
+---------------------
+
+External Open Source Projects Using LLVM 13
 ===========================================
 
 * A project...
-
 
 Additional Information
 ======================

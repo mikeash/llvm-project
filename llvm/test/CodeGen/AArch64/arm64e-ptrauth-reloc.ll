@@ -1,7 +1,7 @@
 ; RUN: llc < %s -mtriple arm64e-apple-darwin     -aarch64-ptrauth-global-dynamic-mat=1 | FileCheck %s --check-prefixes=CHECK,OPT,DYN-OPT
 ; RUN: llc < %s -mtriple arm64e-apple-darwin -O0 -aarch64-ptrauth-global-dynamic-mat=1 | FileCheck %s --check-prefixes=CHECK,O0,DYN-O0
-; RUN: llc < %s -mtriple arm64e-apple-darwin     -aarch64-ptrauth-global-dynamic-mat=0 | FileCheck %s --check-prefixes=CHECK,OPT,LOAD-OPT
-; RUN: llc < %s -mtriple arm64e-apple-darwin -O0 -aarch64-ptrauth-global-dynamic-mat=0 | FileCheck %s --check-prefixes=CHECK,O0,LOAD-O0
+; RUN: llc < %s -mtriple arm64e-apple-darwin     -aarch64-ptrauth-global-dynamic-mat=0 | FileCheck %s --check-prefixes=CHECK,OPT
+; RUN: llc < %s -mtriple arm64e-apple-darwin -O0 -aarch64-ptrauth-global-dynamic-mat=0 | FileCheck %s --check-prefixes=CHECK,O0
 
 target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
 
@@ -241,8 +241,7 @@ define i8* @test_global_process_specific() #0 {
 ; O0-LABEL: _test_global_weak:
 ; O0-NEXT: ; %bb.0:
 ; O0-NEXT:  adrp x[[STUBPAGE:[0-9]+]], l_g_weak$auth_ptr$ia$42@PAGE
-; O0-NEXT:  ldr x8, [x[[STUBPAGE]], l_g_weak$auth_ptr$ia$42@PAGEOFF]
-; O0-NEXT:  mov x0, x8
+; O0-NEXT:  ldr x0, [x[[STUBPAGE]], l_g_weak$auth_ptr$ia$42@PAGEOFF]
 ; O0-NEXT:  ret
 
 ; OPT-LABEL: _test_global_weak:

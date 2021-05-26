@@ -35,9 +35,9 @@ class CombinedAllocator {
     secondary_.InitLinkerInitialized();
   }
 
-  void Init(s32 release_to_os_interval_ms) {
+  void Init(s32 release_to_os_interval_ms, uptr heap_start = 0) {
     stats_.Init();
-    primary_.Init(release_to_os_interval_ms);
+    primary_.Init(release_to_os_interval_ms, heap_start);
     secondary_.Init();
   }
 
@@ -141,13 +141,6 @@ class CombinedAllocator {
       return primary_.GetBlockBegin(p);
     return secondary_.GetBlockBeginFastLocked(p);
   }
-
-  void *GetBlockBeginFastLockedDebug(void *p) {
-    if (primary_.PointerIsMine(p))
-      return primary_.GetBlockBeginDebug(p);
-    return secondary_.GetBlockBeginFastLocked(p);
-  }
-
 
   uptr GetActuallyAllocatedSize(void *p) {
     if (primary_.PointerIsMine(p))
